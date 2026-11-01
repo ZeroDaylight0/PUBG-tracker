@@ -3,23 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PUBG Tactical Analyzer v6.0</title>
+    <title>PUBG Tactical Analyzer</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/telemetry.js"></script>
     <style>
         body { background-color: #06080a; color: #eee; font-family: 'Inter', sans-serif; overflow: hidden; }
-        canvas { background-color: #000; cursor: grab; }
+        canvas { background-color: #000; cursor: grab; display: block; }
+        canvas.dragging { cursor: grabbing; }
         .ui-card { background: rgba(15, 20, 26, 0.98); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
         .btn { transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1); font-size: 10px; font-weight: 800; text-transform: uppercase; }
         .active { background: #f97316 !important; border-color: #f97316 !important; color: #fff !important; }
         .m-item { border-left: 3px solid transparent; transition: all 0.2s; cursor: pointer; }
         .m-item:hover { background: rgba(255,255,255,0.05); }
         .m-item.selected { border-left-color: #f97316; background: rgba(249, 115, 22, 0.15); }
+        .ev { border-left: 2px solid; padding: 6px 8px; font-size: 10px; cursor: pointer; border-radius: 0 4px 4px 0; transition: background 0.15s; }
+        .ev:hover { filter: brightness(1.3); }
+        .ev-sub { font-size: 9px; color: #64748b; margin-top: 2px; }
+        .ev-time { float: right; font-size: 9px; color: #64748b; font-variant-numeric: tabular-nums; }
+        .ev-KILL { border-color: #ef4444; background: rgba(239,68,68,0.07); }
+        .ev-FINISH { border-color: #fb923c; background: rgba(251,146,60,0.07); }
+        .ev-KNOCK { border-color: #facc15; background: rgba(250,204,21,0.07); }
+        .ev-KNOCKED { border-color: #a855f7; background: rgba(168,85,247,0.07); }
+        .ev-REVIVE, .ev-REVIVED { border-color: #22c55e; background: rgba(34,197,94,0.07); }
+        .ev-DEATH { border-color: #fff; background: rgba(255,255,255,0.1); }
+        .hs { color: #f87171; font-weight: 800; }
+        .stat { background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 4px; }
+        .stat-l { font-size: 8px; color: #64748b; text-transform: uppercase; }
+        .stat-v { font-size: 12px; font-weight: 900; }
+        .legend i { width: 14px; text-align: center; }
         #tooltip {
             pointer-events: none;
             background: linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%);
             border: 1px solid rgba(249, 115, 22, 0.5);
-            padding: 0;
             border-radius: 8px;
             font-size: 11px;
             z-index: 1000;
@@ -29,32 +45,11 @@
             min-width: 220px;
             overflow: hidden;
         }
-        .tooltip-header {
-            background: rgba(249, 115, 22, 0.15);
-            padding: 8px 12px;
-            border-bottom: 1px solid rgba(249, 115, 22, 0.3);
-            font-weight: 700;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .tooltip-body {
-            padding: 12px;
-        }
-        .tooltip-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            font-size: 11px;
-        }
-        .tooltip-label {
-            color: rgba(255, 255, 255, 0.5);
-            font-weight: 500;
-        }
-        .tooltip-value {
-            color: #fff;
-            font-weight: 600;
-        }
+        .tooltip-header { padding: 8px 12px; border-bottom: 1px solid; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tooltip-body { padding: 10px 12px; }
+        .tooltip-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; font-size: 11px; }
+        .tooltip-label { color: rgba(255, 255, 255, 0.5); font-weight: 500; }
+        .tooltip-value { color: #fff; font-weight: 600; }
         .custom-scroll::-webkit-scrollbar { width: 3px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
     </style>
@@ -62,17 +57,17 @@
 <body class="h-screen flex flex-col">
 
     <header class="h-14 border-b border-white/5 flex items-center justify-between px-6 bg-[#0c0e12] z-50">
-        <div class="flex items-center gap-4">
-            <div class="bg-orange-600 p-1.5 rounded text-white"><i class="fa-solid fa-crosshairs"></i></div>
-            <h1 id="matchTitle" class="font-black text-xs tracking-tighter uppercase italic text-slate-400">Tactical Analyzer 6.0</h1>
+        <div class="flex items-center gap-4 min-w-0">
+            <a href="/start" title="New search" class="bg-orange-600 hover:bg-orange-500 p-1.5 rounded text-white"><i class="fa-solid fa-magnifying-glass"></i></a>
+            <h1 id="matchTitle" class="font-black text-xs tracking-tighter uppercase italic text-slate-400 truncate">Tactical Analyzer</h1>
         </div>
         <div id="quickStats" class="text-[10px] font-black flex gap-6 text-orange-500 uppercase tracking-widest"></div>
     </header>
 
     <div class="flex-grow relative flex overflow-hidden">
-        
+
         <!-- Left: History & Team -->
-        <div class="w-64 bg-[#0c0e12] border-r border-white/5 flex flex-col z-40">
+        <div class="w-64 shrink-0 bg-[#0c0e12] border-r border-white/5 flex flex-col z-40">
             <div class="p-4 border-b border-white/5 h-1/2 flex flex-col overflow-hidden">
                 <h3 class="text-[9px] font-black text-slate-600 uppercase mb-3">Match History</h3>
                 <div id="matchList" class="flex-grow overflow-y-auto space-y-1 custom-scroll"></div>
@@ -84,25 +79,37 @@
         </div>
 
         <!-- Center: Map -->
-        <div id="viewport" class="flex-grow bg-black relative flex items-center justify-center overflow-hidden">
+        <div id="viewport" class="flex-grow min-w-0 bg-black relative overflow-hidden">
             <canvas id="mapCanvas"></canvas>
-            <div id="phaseNav" class="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-1.5 p-1.5 ui-card rounded-xl shadow-2xl z-50 border border-white/10"></div>
+            <div id="mapNotice" class="absolute top-3 left-1/2 -translate-x-1/2 text-[9px] font-bold uppercase text-slate-400 ui-card rounded px-3 py-1.5 hidden"></div>
+            <div class="legend absolute top-3 left-3 ui-card rounded-lg p-2.5 text-[9px] text-slate-400 space-y-1 z-40">
+                <div><i class="fa-solid fa-circle text-green-500"></i> Landing</div>
+                <div><i class="fa-solid fa-xmark text-yellow-400"></i> Knock</div>
+                <div><span class="inline-block w-[14px] text-center">💀</span> Kill</div>
+                <div><i class="fa-solid fa-circle-xmark text-purple-400"></i> Knocked</div>
+                <div><i class="fa-solid fa-xmark text-red-500"></i> Death</div>
+            </div>
+            <div id="phaseNav" class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-wrap justify-center gap-1.5 p-1.5 ui-card rounded-xl shadow-2xl z-50 border border-white/10"></div>
             <div id="tooltip"></div>
         </div>
 
         <!-- Right: Log & Stats -->
-        <div class="w-72 bg-[#0c0e12] border-l border-white/5 flex flex-col z-40">
-            <div class="p-4 border-b border-white/5 h-[60%] flex flex-col overflow-hidden">
+        <div class="w-72 shrink-0 bg-[#0c0e12] border-l border-white/5 flex flex-col z-40">
+            <div class="p-4 border-b border-white/5 h-[55%] flex flex-col overflow-hidden">
                 <h3 class="text-[9px] font-black text-slate-600 uppercase mb-3">Combat Log</h3>
-                <div id="eventList" class="flex-grow overflow-y-auto space-y-2 custom-scroll pr-1"></div>
+                <div id="eventList" class="flex-grow overflow-y-auto space-y-1.5 custom-scroll pr-1"></div>
             </div>
-            <div class="p-4 h-[40%] bg-[#0e1014] flex flex-col overflow-hidden">
+            <div class="p-4 h-[45%] bg-[#0e1014] flex flex-col overflow-hidden">
                 <h3 class="text-[9px] font-black text-slate-600 uppercase mb-3">Statistics</h3>
-                <div id="playerStats" class="grid grid-cols-2 gap-2 mb-4"></div>
-                <div class="mt-auto border-t border-white/5 pt-4">
+                <div id="playerStats" class="grid grid-cols-3 gap-1.5 mb-3 overflow-y-auto custom-scroll"></div>
+                <div class="mt-auto border-t border-white/5 pt-3 space-y-2">
                     <label class="flex items-center justify-between cursor-pointer group">
                         <span class="text-[9px] font-bold text-slate-500 group-hover:text-slate-300">PLANE PATH</span>
-                        <input type="checkbox" id="planeToggle" class="accent-orange-500" onchange="viz.render()" checked>
+                        <input type="checkbox" id="planeToggle" class="accent-orange-500" checked>
+                    </label>
+                    <label class="flex items-center justify-between cursor-pointer group">
+                        <span class="text-[9px] font-bold text-slate-500 group-hover:text-slate-300">WHOLE SQUAD</span>
+                        <input type="checkbox" id="squadToggle" class="accent-orange-500">
                     </label>
                 </div>
             </div>
@@ -110,278 +117,347 @@
     </div>
 
     <!-- Loader -->
-    <div id="loader" class="fixed inset-0 z-[100] bg-[#080a0c] flex flex-col items-center justify-center hidden">
+    <div id="loader" class="fixed inset-0 z-[100] bg-[#080a0c]/90 flex flex-col items-center justify-center hidden">
         <div class="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p class="text-[10px] font-black uppercase text-slate-500 italic">Processing Telemetry...</p>
+        <p id="loaderText" class="text-[10px] font-black uppercase text-slate-500 italic">Processing Telemetry...</p>
     </div>
 
     <script>
-        const MAP_DATA = {"Baltic_Main":816000, "Erangel_Main":816000, "Desert_Main":816000, "Savage_Main":408000, "Summerland_Main":204000, "Chimera_Main":306000, "Tiger_Main":816000, "Kiki_Main":816000, "Neon_Main":816000, "DihorOtok_Main":816000, "Heaven_Main":102000};
-        
+        const SQUAD_COLORS = ['#f97316', '#38bdf8', '#a3e635', '#e879f9'];
+        const EVENT_LABELS = { KILL: 'Kill', FINISH: 'Finish', KNOCK: 'Knock', KNOCKED: 'Knocked by', REVIVE: 'Revived', REVIVED: 'Revived by', DEATH: 'Killed by' };
+        const MODE_NAMES = { 'squad-fpp': 'Squad FPP', 'squad': 'Squad TPP', 'duo-fpp': 'Duo FPP', 'duo': 'Duo TPP', 'solo-fpp': 'Solo FPP', 'solo': 'Solo TPP' };
+
+        const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const fmtClock = (t) => t == null ? '' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+        const fmtMode = (m) => MODE_NAMES[m] || String(m || '').replace(/-/g, ' ');
+
         class Visualizer {
             constructor() {
                 this.canvas = document.getElementById('mapCanvas');
                 this.ctx = this.canvas.getContext('2d');
-                this.mapImg = new Image();
+                this.viewport = document.getElementById('viewport');
+                this.mapImg = null;
+                this.scale = 1; this.offsetX = 0; this.offsetY = 0;
+                this.currentPhase = -1;
+                this.loadToken = 0;
+                this.dictionaries = null;
+                this.setupInteractions();
                 this.initApp();
             }
 
+            resize() {
+                this.canvas.width = this.viewport.clientWidth;
+                this.canvas.height = this.viewport.clientHeight;
+                this.render();
+            }
+
+            loader(on, text) {
+                document.getElementById('loader').classList.toggle('hidden', !on);
+                if (text) document.getElementById('loaderText').textContent = text;
+            }
+
+            notice(text) {
+                const el = document.getElementById('mapNotice');
+                el.textContent = text || '';
+                el.classList.toggle('hidden', !text);
+            }
+
             async initApp() {
-                this.canvas.width = window.innerWidth - 64 - 72 - 500; 
-                this.canvas.height = window.innerHeight - 56;
-                const list = await (await fetch('/matches_list')).json();
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+                document.getElementById('planeToggle').onchange = () => this.render();
+                document.getElementById('squadToggle').onchange = () => this.render();
+
+                const [list, dict] = await Promise.all([
+                    fetch('/matches_list').then((r) => r.json()),
+                    fetch('/dictionaries').then((r) => r.json()).catch(() => ({})),
+                ]);
+                this.dictionaries = dict;
                 const listEl = document.getElementById('matchList');
-                list.forEach(m => {
-                    listEl.innerHTML += `<div onclick="viz.loadMatch(${m.id})" id="m-${m.id}" class="m-item p-3 rounded bg-white/5 flex justify-between items-center group">
-                        <div class="truncate mr-2"><div class="text-[10px] font-black group-hover:text-orange-500 uppercase">${m.map}</div><div class="text-[8px] text-slate-500">${m.date}</div></div>
-                        <div class="text-[10px] font-black ${m.rank===1?'text-yellow-500':'text-slate-500'}">#${m.rank}</div>
-                    </div>`;
-                });
-                this.loadMatch(1);
+                listEl.innerHTML = list.map((m) => `
+                    <div data-match="${m.id}" id="m-${m.id}" class="m-item p-2.5 rounded bg-white/5 flex justify-between items-center group">
+                        <div class="truncate mr-2">
+                            <div class="text-[10px] font-black group-hover:text-orange-500 uppercase">${esc(m.map)}</div>
+                            <div class="text-[8px] text-slate-500">${esc(m.date)} · ${esc(fmtMode(m.mode))}</div>
+                            <div class="text-[8px] text-slate-400">${m.kills} kills · ${m.knocks} knocks · ${m.damage} dmg</div>
+                        </div>
+                        <div class="text-[11px] font-black ${m.rank === 1 ? 'text-yellow-500' : 'text-slate-500'}">#${m.rank}</div>
+                    </div>`).join('');
+                listEl.onclick = (e) => { const it = e.target.closest('[data-match]'); if (it) this.loadMatch(+it.dataset.match); };
+                if (list.length) this.loadMatch(1);
             }
 
             async loadMatch(idx) {
-                document.getElementById('loader').classList.remove('hidden');
-                document.querySelectorAll('.m-item').forEach(el => el.classList.toggle('selected', el.id === `m-${idx}`));
-                this.meta = await (await fetch(`/match_meta?i=${idx}`)).json();
-                this.mapUnits = MAP_DATA[this.meta.map] || 816000;
-                
-                this.mapImg.src = `/fetch_image?map_id=${this.meta.map}&url=${encodeURIComponent(`https://raw.githubusercontent.com/pubg/api-assets/master/map/${this.meta.map}.png`)}`;
-                await new Promise(r => this.mapImg.onload = r);
+                const token = ++this.loadToken;
+                this.loader(true, 'Loading match...');
+                document.querySelectorAll('.m-item').forEach((el) => el.classList.toggle('selected', el.id === `m-${idx}`));
+                try {
+                    const meta = await (await fetch(`/match_meta?i=${idx}`)).json();
+                    if (token !== this.loadToken) return;
+                    this.meta = meta;
+                    this.mapUnits = PubgTelemetry.MAP_SIZES[meta.map] || 816000;
+                    document.getElementById('matchTitle').textContent = `${meta.map_name} · ${fmtMode(meta.mode)} · ${meta.date} · #${meta.rank}`;
 
-                const events = await (await fetch(`/fetch_telemetry?url=${encodeURIComponent(this.meta.telemetry)}`)).json();
-                this.process(events, this.meta.team_stats.map(t => t.name));
-                this.renderTeamUI(this.meta.team_stats);
-                this.renderPhasesUI();
-                this.selectPlayer(this.meta.searched_nick);
-                this.setupInteractions();
-                document.getElementById('loader').classList.add('hidden');
+                    this.loader(true, 'Downloading telemetry...');
+                    const telemetryReq = fetch(`/fetch_telemetry?url=${encodeURIComponent(meta.telemetry)}`).then((r) => {
+                        if (!r.ok) throw new Error(`Telemetry download failed (${r.status})`);
+                        return r.json();
+                    });
+                    const imgReq = this.loadImage(`/fetch_image?map_id=${encodeURIComponent(meta.map)}&q=low`);
+                    const [events, img] = await Promise.all([telemetryReq, imgReq]);
+                    if (token !== this.loadToken) return;
+
+                    this.mapImg = img;
+                    this.notice(img ? '' : 'Map image is unavailable');
+                    this.upgradeMapImage(meta.map, token);
+
+                    const team = meta.team_stats.map((t) => t.name);
+                    const ranks = Object.fromEntries(meta.team_stats.map((t) => [t.name, t.rank]));
+                    this.data = PubgTelemetry.parse(events, team, {
+                        dictionaries: this.dictionaries,
+                        mapUnits: this.mapUnits,
+                        eliminated: (n) => ranks[n] !== 1,
+                    });
+                    this.currentPhase = -1;
+                    this.renderTeamUI(meta.team_stats);
+                    this.renderPhasesUI();
+                    this.selectPlayer(meta.searched_nick);
+                } catch (err) {
+                    if (token === this.loadToken) this.notice(err.message || 'Failed to load the match');
+                } finally {
+                    if (token === this.loadToken) this.loader(false);
+                }
             }
 
-            process(events, team) {
-                this.phases = []; this.playerData = {}; this.planePath = null;
-
-                // Collect all unique zone states
-                const zoneStates = [];
-                events.forEach(ev => {
-                    if (ev._T === "LogGameStatePeriodic" && ev.gameState?.safetyZoneRadius > 0) {
-                        const gs = ev.gameState;
-                        zoneStates.push({
-                            time: ev._D,
-                            white: {x: gs.safetyZonePosition.x, y: gs.safetyZonePosition.y, r: gs.safetyZoneRadius},
-                            blue: {x: gs.poisonGasWarningPosition.x, y: gs.poisonGasWarningPosition.y, r: gs.poisonGasWarningRadius}
-                        });
-                    }
+            loadImage(src) {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => resolve(null);
+                    img.src = src;
                 });
+            }
 
-                // Group into phases: a phase starts when the white zone radius changes significantly
-                if (zoneStates.length > 0) {
-                    let currentPhase = zoneStates[0];
-                    this.phases.push(currentPhase);
-
-                    for (let i = 1; i < zoneStates.length; i++) {
-                        const prev = zoneStates[i - 1];
-                        const curr = zoneStates[i];
-
-                        // New phase when the white zone changed a lot (a new shrink)
-                        if (Math.abs(curr.white.r - prev.white.r) > this.mapUnits * 0.01) {
-                            this.phases.push(curr);
-                        }
-                    }
-                }
-                const f = events.filter(e => e._T === "LogPlayerPosition" && e.common.isGame < 0.2).slice(0, 20);
-                if (f.length >= 2) this.planePath = { start: f[0].character.location, end: f[f.length-1].character.location };
-
-                team.forEach(nick => {
-                    let groundPath = [], kills = [], knocks = [], death = null, landTime = null, lastPos = null;
-                    const landEv = events.find(e => e._T === "LogParachuteLanding" && e.character.name === nick);
-                    if (landEv) landTime = landEv._D;
-
-                    events.forEach(ev => {
-                        if (ev._T === "LogPlayerPosition" && ev.character.name === nick) {
-                            if (landTime && ev._D >= landTime) groundPath.push(ev.character.location);
-                            lastPos = ev.character.location;
-                        }
-                        // Knockdowns
-                        if (ev._T === "LogPlayerMakeGroggy" && ev.attacker?.name === nick && ev.victim?.name) {
-                            knocks.push({
-                                loc: ev.victim.location || lastPos,
-                                name: ev.victim.name,
-                                weapon: ev.damageCauserName || 'Melee',
-                                dist: Math.round((ev.distance || 0)/100),
-                                time: ev._D
-                            });
-                        }
-                        // Kills
-                        if (ev._T === "LogPlayerKill") {
-                            const info = {
-                                loc: ev.victim.location || ev.victim.position || lastPos,
-                                name: ev.victim.name,
-                                weapon: ev.damageCauserName || 'Unknown',
-                                dist: Math.round((ev.distance || 0)/100),
-                                time: ev._D
-                            };
-                            if (ev.killer?.name === nick || ev.finisher?.name === nick) {
-                                info.type = (ev.killer?.name === nick) ? 'KILL' : 'FINISH';
-                                kills.push(info);
-                            }
-                            if (ev.victim.name === nick) {
-                                death = {
-                                    loc: info.loc,
-                                    killer: ev.killer?.name || ev.finisher?.name || 'Zone',
-                                    weapon: ev.damageCauserName || 'Environment',
-                                    dist: info.dist
-                                };
-                            }
-                        }
-                    });
-                    if (landEv && groundPath.length > 0) groundPath[0] = landEv.character.location;
-                    if (!death && nick === this.meta.searched_nick && this.meta.rank !== 1) death = { loc: lastPos, killer: 'Unknown', weapon: 'N/A', dist: 0 };
-                    this.playerData[nick] = { groundPath, landing: landEv?.character.location, death, kills, knocks };
-                });
+            // Show the light image right away, swap to the high-res one once it is downloaded and cached
+            async upgradeMapImage(mapId, token) {
+                const img = await this.loadImage(`/fetch_image?map_id=${encodeURIComponent(mapId)}&q=high`);
+                if (img && token === this.loadToken) { this.mapImg = img; this.render(); }
             }
 
             renderTeamUI(stats) {
-                const el = document.getElementById('teamList'); el.innerHTML = "";
-                stats.forEach(t => el.innerHTML += `<button id="btn-${t.name}" onclick="viz.selectPlayer('${t.name}')" class="btn w-full p-2.5 rounded text-left bg-white/5 hover:bg-white/10 flex justify-between items-center group truncate">
-                    <span class="truncate group-hover:text-orange-500">${t.name}</span>
-                    <span class="text-slate-600 text-[8px] font-black">#${t.rank}</span>
-                </button>`);
+                const el = document.getElementById('teamList');
+                el.innerHTML = stats.map((t, i) => `
+                    <button data-nick="${esc(t.name)}" class="squad-btn btn w-full p-2.5 rounded text-left bg-white/5 hover:bg-white/10 flex justify-between items-center group">
+                        <span class="truncate group-hover:text-orange-500"><span style="color:${SQUAD_COLORS[i % 4]}">●</span> ${esc(t.name)}</span>
+                        <span class="opacity-60 text-[8px] font-black whitespace-nowrap">${t.kills}K · ${t.knocks}DB</span>
+                    </button>`).join('');
+                el.onclick = (e) => { const b = e.target.closest('[data-nick]'); if (b) this.selectPlayer(b.dataset.nick); };
             }
 
             renderPhasesUI() {
-                const nav = document.getElementById('phaseNav'); nav.innerHTML = `<button onclick="viz.setPhase(-1)" class="btn px-4 py-2 rounded-lg active">All</button>`;
-                this.phases.forEach((p, i) => nav.innerHTML += `<button onclick="viz.setPhase(${i})" class="btn px-4 py-2 rounded-lg">P${i+1}</button>`);
+                const nav = document.getElementById('phaseNav');
+                nav.innerHTML = `<button data-phase="-1" class="btn px-3 py-1.5 rounded-lg active">All</button>` +
+                    this.data.phases.map((p, i) => `<button data-phase="${i}" title="${fmtClock(p.t)}" class="btn px-3 py-1.5 rounded-lg">P${i + 1}</button>`).join('');
+                nav.onclick = (e) => { const b = e.target.closest('[data-phase]'); if (b) this.setPhase(+b.dataset.phase); };
             }
 
             selectPlayer(nick) {
+                if (!this.data.players[nick]) nick = this.meta.team_stats[0].name;
                 this.currentNick = nick;
-                document.querySelectorAll('[id^="btn-"]').forEach(b => b.classList.remove('active'));
-                const btn = document.getElementById(`btn-${nick}`); if (btn) btn.classList.add('active');
-                
-                const d = this.playerData[nick];
-                const s = this.meta.team_stats.find(t => t.name === nick);
-                
-                // IMPORTANT: use s.kills (from the API), not d.kills.length (from telemetry)
-                document.getElementById('quickStats').innerHTML = `<span>KILLS: ${s.kills}</span><span>DAMAGE: ${s.damage}</span>`;
-                
-                const list = document.getElementById('eventList'); list.innerHTML = "";
-                const all = [
-                    ...d.knocks.map(k => ({...k, t: 'KNOCK', c: 'yellow'})),
-                    ...d.kills.map(k => ({...k, t: k.type, c: 'red'}))
-                ].sort((a, b) => new Date(a.time) - new Date(b.time));
+                document.querySelectorAll('.squad-btn').forEach((b) => b.classList.toggle('active', b.dataset.nick === nick));
 
-                all.forEach(e => {
-                    list.innerHTML += `<div class="bg-${e.c}-500/5 border-l-2 border-${e.c}-500 p-2 text-[9px]">
-                        <b>${e.t}:</b> ${e.name}
-                        <div class='text-[8px] text-slate-500'>${e.weapon} • ${e.dist}m</div>
-                    </div>`;
-                });
+                const d = this.data.players[nick];
+                const s = this.meta.team_stats.find((t) => t.name === nick);
 
-                if (d.death) {
-                    list.innerHTML += `<div class="bg-white/10 p-2 border-l-2 border-white text-[9px] font-black uppercase text-center">Eliminated 💀</div>`;
-                }
+                // Counters come from the official match stats; telemetry gives positions and details
+                document.getElementById('quickStats').innerHTML =
+                    `<span>Kills: ${s.kills}</span><span>Knocks: ${s.knocks}</span><span>Damage: ${s.damage}</span>`;
 
-                document.getElementById('playerStats').innerHTML = `
-                    <div class="bg-white/5 p-3 rounded"><div class="text-[8px] text-slate-500">DAMAGE</div><div class="text-xs font-black">${s.damage}</div></div>
-                    <div class="bg-white/5 p-3 rounded"><div class="text-[8px] text-slate-500">KILLS</div><div class="text-xs font-black text-orange-500">${s.kills}</div></div>
-                    <div class="bg-white/5 p-3 rounded"><div class="text-[8px] text-slate-500">DIST.</div><div class="text-xs font-black">${(s.dist/1000).toFixed(1)}km</div></div>
-                    <div class="bg-white/5 p-3 rounded"><div class="text-[8px] text-slate-500">RANK</div><div class="text-xs font-black text-yellow-500">#${s.rank}</div></div>`;
+                const list = document.getElementById('eventList');
+                list.innerHTML = d.timeline.length ? d.timeline.map((e, i) => this.eventHtml(e, i)).join('')
+                    : `<div class="text-[9px] text-slate-600">No combat events</div>`;
+                list.onclick = (ev) => {
+                    const it = ev.target.closest('[data-ev]');
+                    if (it) this.focusOn(d.timeline[+it.dataset.ev].loc);
+                };
+
+                const stat = (label, value, cls = '') => `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v ${cls}">${value}</div></div>`;
+                document.getElementById('playerStats').innerHTML = [
+                    stat('Kills', s.kills, 'text-orange-500'),
+                    stat('Knocks', s.knocks, 'text-yellow-400'),
+                    stat('Assists', s.assists),
+                    stat('Damage', s.damage),
+                    stat('Headshots', s.headshots),
+                    stat('Longest', `${s.longest}m`),
+                    stat('Revives', s.revives),
+                    stat('Survived', fmtClock(s.survived)),
+                    stat('Distance', `${(s.dist / 1000).toFixed(1)}km`),
+                ].join('');
                 this.autoFocus(); this.render();
             }
 
-            setPhase(idx) { this.currentPhase = idx; document.querySelectorAll('#phaseNav .btn').forEach((b, i) => b.classList.toggle('active', i === idx + 1)); this.render(); }
+            eventHtml(e, i) {
+                const hs = e.headshot ? ' <span class="hs">HS</span>' : '';
+                const tk = e.teamKill ? ' <span class="hs">TEAM</span>' : '';
+                let sub = '';
+                if (e.type === 'DEATH') sub = e.unknown ? 'Kill event missing in telemetry' : `${esc(e.weapon)}${e.dist ? ` · ${e.dist}m` : ''}`;
+                else if (e.type === 'REVIVE' || e.type === 'REVIVED') sub = '';
+                else sub = `${esc(e.weapon)}${e.dist ? ` · ${e.dist}m` : ''}`;
+                return `<div data-ev="${i}" class="ev ev-${e.type}">
+                    <span class="ev-time">${fmtClock(e.t)}</span>
+                    ${e.unknown ? '<b>Eliminated</b>' : `<b>${EVENT_LABELS[e.type]}:</b> ${esc(e.suicide ? 'Suicide' : e.name)}`}${hs}${tk}
+                    ${sub ? `<div class="ev-sub">${sub}</div>` : ''}
+                </div>`;
+            }
+
+            setPhase(idx) {
+                this.currentPhase = idx;
+                document.querySelectorAll('#phaseNav .btn').forEach((b) => b.classList.toggle('active', +b.dataset.phase === idx));
+                this.render();
+            }
+
+            // Telemetry (cm) -> map image pixels (2048 virtual)
+            px(v) { return v / this.mapUnits * 2048; }
 
             autoFocus() {
-                const pts = this.playerData[this.currentNick].groundPath; if (!pts.length) return;
-                let minX = 816000, maxX = 0, minY = 816000, maxY = 0;
-                pts.forEach(p => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
-                this.scale = Math.min(this.canvas.width / ((maxX - minX + 100000) / this.mapUnits * 2048), 12);
-                this.offsetX = this.canvas.width/2 - ((minX + maxX)/2 / this.mapUnits * 2048) * this.scale;
-                this.offsetY = this.canvas.height/2 - ((minY + maxY)/2 / this.mapUnits * 2048) * this.scale;
+                const d = this.data.players[this.currentNick];
+                const pts = [...d.path, ...d.timeline.map((e) => e.loc)].filter(Boolean);
+                if (!pts.length) { this.fitMap(); return; }
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach((p) => { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); });
+                const pad = this.mapUnits * 0.04;
+                const w = this.px(maxX - minX + pad * 2), h = this.px(maxY - minY + pad * 2);
+                this.scale = Math.min(this.canvas.width / w, this.canvas.height / h, 12);
+                this.offsetX = this.canvas.width / 2 - this.px((minX + maxX) / 2) * this.scale;
+                this.offsetY = this.canvas.height / 2 - this.px((minY + maxY) / 2) * this.scale;
+            }
+
+            fitMap() {
+                this.scale = Math.min(this.canvas.width, this.canvas.height) / 2048;
+                this.offsetX = (this.canvas.width - 2048 * this.scale) / 2;
+                this.offsetY = (this.canvas.height - 2048 * this.scale) / 2;
+            }
+
+            focusOn(loc) {
+                if (!loc) return;
+                this.scale = Math.max(this.scale, 4);
+                this.offsetX = this.canvas.width / 2 - this.px(loc.x) * this.scale;
+                this.offsetY = this.canvas.height / 2 - this.px(loc.y) * this.scale;
+                this.render();
             }
 
             setupInteractions() {
-                this.canvas.onmousedown = (e) => { this.isDrag = true; this.last = {x:e.clientX, y:e.clientY}; };
-                window.onmousemove = (e) => {
+                this.canvas.addEventListener('mousedown', (e) => { this.isDrag = true; this.last = { x: e.clientX, y: e.clientY }; this.canvas.classList.add('dragging'); });
+                window.addEventListener('mousemove', (e) => {
+                    if (this.isDrag) {
+                        this.offsetX += e.clientX - this.last.x; this.offsetY += e.clientY - this.last.y;
+                        this.last = { x: e.clientX, y: e.clientY }; this.render();
+                    }
                     const rect = this.canvas.getBoundingClientRect();
                     this.handleHover(e.clientX - rect.left, e.clientY - rect.top);
-                    if (!this.isDrag) return;
-                    this.offsetX += e.clientX - this.last.x; this.offsetY += e.clientY - this.last.y;
-                    this.last = {x:e.clientX, y:e.clientY}; this.render();
-                };
-                window.onmouseup = () => this.isDrag = false;
-                this.canvas.onwheel = (e) => { const d = e.deltaY > 0 ? 0.9 : 1.1; this.offsetX = e.offsetX - (e.offsetX - this.offsetX) * d; this.offsetY = e.offsetY - (e.offsetY - this.offsetY) * d; this.scale *= d; this.render(); };
+                });
+                window.addEventListener('mouseup', () => { this.isDrag = false; this.canvas.classList.remove('dragging'); });
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const k = e.deltaY > 0 ? 0.9 : 1.1;
+                    const ns = Math.min(Math.max(this.scale * k, 0.1), 40);
+                    const f = ns / this.scale;
+                    this.offsetX = e.offsetX - (e.offsetX - this.offsetX) * f;
+                    this.offsetY = e.offsetY - (e.offsetY - this.offsetY) * f;
+                    this.scale = ns; this.render();
+                }, { passive: false });
             }
 
             handleHover(mx, my) {
-                const d = this.playerData[this.currentNick];
                 const tip = document.getElementById('tooltip');
-                const items = [...d.kills, ...d.knocks];
-                if (d.death && d.death.loc) items.push({...d.death, isDeath: true});
+                const d = this.data && this.data.players[this.currentNick];
+                const inside = mx >= 0 && my >= 0 && mx <= this.canvas.width && my <= this.canvas.height;
+                if (!d || !inside || this.isDrag) { tip.style.display = 'none'; return; }
 
-                let found = items.find(m => {
-                    const px = m.loc.x / this.mapUnits * 2048 * this.scale + this.offsetX;
-                    const py = m.loc.y / this.mapUnits * 2048 * this.scale + this.offsetY;
-                    return Math.hypot(mx - px, my - py) < 25;
-                });
-
-                if (found) {
-                    tip.style.display = 'block';
-                    tip.style.left = mx + 15 + 'px';
-                    tip.style.top = my + 15 + 'px';
-
-                    const isDeath = found.isDeath || found.killer !== undefined;
-                    const isKnock = found.t === 'KNOCK';
-
-                    let headerText = isDeath ? 'ELIMINATED' : (isKnock ? 'KNOCKED' : 'KILL');
-                    let headerColor = isDeath ? '#ef4444' : (isKnock ? '#eab308' : '#f97316');
-
-                    tip.innerHTML = `
-                        <div class="tooltip-header" style="color: ${headerColor}; border-color: ${headerColor}40;">
-                            ${headerText}
-                        </div>
-                        <div class="tooltip-body">
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">${isDeath ? 'Killer' : 'Target'}</span>
-                                <span class="tooltip-value">${found.name || found.killer}</span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Weapon</span>
-                                <span class="tooltip-value">${found.weapon}</span>
-                            </div>
-                            <div class="tooltip-row">
-                                <span class="tooltip-label">Distance</span>
-                                <span class="tooltip-value">${found.dist}m</span>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    tip.style.display = 'none';
+                let found = null, bestDist = 18;
+                for (const m of d.timeline) {
+                    if (!m.loc) continue;
+                    const dd = Math.hypot(mx - (this.px(m.loc.x) * this.scale + this.offsetX), my - (this.px(m.loc.y) * this.scale + this.offsetY));
+                    if (dd < bestDist) { bestDist = dd; found = m; }
                 }
+                if (!found) { tip.style.display = 'none'; return; }
+
+                const colors = { KILL: '#ef4444', FINISH: '#fb923c', KNOCK: '#eab308', KNOCKED: '#a855f7', REVIVE: '#22c55e', REVIVED: '#22c55e', DEATH: '#ffffff' };
+                const color = colors[found.type];
+                const isOwn = ['KILL', 'FINISH', 'KNOCK', 'REVIVE'].includes(found.type);
+                const row = (l, v) => `<div class="tooltip-row"><span class="tooltip-label">${l}</span><span class="tooltip-value">${v}</span></div>`;
+                tip.innerHTML = `
+                    <div class="tooltip-header" style="color:${color};border-color:${color}55;background:${color}1f">${EVENT_LABELS[found.type]} · ${fmtClock(found.t)}</div>
+                    <div class="tooltip-body">
+                        ${row(isOwn ? 'Target' : 'By', esc(found.suicide ? 'Suicide' : found.name))}
+                        ${found.weapon ? row('Weapon', esc(found.weapon) + (found.headshot ? ' <span class="hs">HS</span>' : '')) : ''}
+                        ${found.dist ? row('Distance', `${found.dist}m`) : ''}
+                    </div>`;
+                tip.style.display = 'block';
+                const vw = this.viewport.clientWidth, vh = this.viewport.clientHeight;
+                tip.style.left = Math.min(mx + 15, vw - tip.offsetWidth - 8) + 'px';
+                tip.style.top = Math.min(my + 15, vh - tip.offsetHeight - 8) + 'px';
+            }
+
+            drawPath(ctx, d, color, width) {
+                if (d.jump && d.landing) {
+                    ctx.beginPath(); ctx.strokeStyle = color + '88'; ctx.setLineDash([6 / this.scale, 6 / this.scale]); ctx.lineWidth = 2 / this.scale;
+                    ctx.moveTo(this.px(d.jump.x), this.px(d.jump.y)); ctx.lineTo(this.px(d.landing.x), this.px(d.landing.y)); ctx.stroke(); ctx.setLineDash([]);
+                }
+                if (d.path.length < 2) return;
+                ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = width / this.scale; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+                d.path.forEach((p, i) => i === 0 ? ctx.moveTo(this.px(p.x), this.px(p.y)) : ctx.lineTo(this.px(p.x), this.px(p.y)));
+                ctx.stroke();
+            }
+
+            drawCross(ctx, loc, color, size, width) {
+                const x = this.px(loc.x), y = this.px(loc.y), s = size / this.scale;
+                ctx.strokeStyle = '#000'; ctx.lineWidth = (width + 3) / this.scale;
+                ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
+                ctx.strokeStyle = color; ctx.lineWidth = width / this.scale;
+                ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
+            }
+
+            drawDot(ctx, loc, color, r) {
+                ctx.fillStyle = color; ctx.beginPath(); ctx.arc(this.px(loc.x), this.px(loc.y), r / this.scale, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / this.scale; ctx.stroke();
             }
 
             render() {
-                const ctx = this.ctx; const d = this.playerData[this.currentNick];
+                const ctx = this.ctx;
                 ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                if (!this.data || !this.currentNick) return;
+                const d = this.data.players[this.currentNick];
                 ctx.save(); ctx.translate(this.offsetX, this.offsetY); ctx.scale(this.scale, this.scale);
-                if (this.mapImg.complete) ctx.drawImage(this.mapImg, 0, 0, 2048, 2048);
-                if (this.currentPhase >= 0) {
-                    const p = this.phases[this.currentPhase];
-                    ctx.strokeStyle="#0066ff99"; ctx.lineWidth=6/this.scale; ctx.beginPath(); ctx.arc(p.blue.x/this.mapUnits*2048, p.blue.y/this.mapUnits*2048, p.blue.r/this.mapUnits*2048, 0, Math.PI*2); ctx.stroke();
-                    ctx.strokeStyle="#ffffff99"; ctx.lineWidth=3/this.scale; ctx.beginPath(); ctx.arc(p.white.x/this.mapUnits*2048, p.white.y/this.mapUnits*2048, p.white.r/this.mapUnits*2048, 0, Math.PI*2); ctx.stroke();
+                ctx.imageSmoothingEnabled = true;
+                if (this.mapImg) ctx.drawImage(this.mapImg, 0, 0, 2048, 2048);
+                else { ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, 2048, 2048); }
+
+                const p = this.data.phases[this.currentPhase];
+                if (p) {
+                    ctx.strokeStyle = '#3b82f6cc'; ctx.lineWidth = 4 / this.scale; ctx.beginPath(); ctx.arc(this.px(p.blue.x), this.px(p.blue.y), this.px(p.blue.r), 0, Math.PI * 2); ctx.stroke();
+                    ctx.strokeStyle = '#ffffffcc'; ctx.lineWidth = 3 / this.scale; ctx.beginPath(); ctx.arc(this.px(p.white.x), this.px(p.white.y), this.px(p.white.r), 0, Math.PI * 2); ctx.stroke();
                 }
-                if (document.getElementById('planeToggle').checked && this.planePath) {
-                    const dx = this.planePath.end.x - this.planePath.start.x, dy = this.planePath.end.y - this.planePath.start.y;
-                    ctx.beginPath(); ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.setLineDash([15, 15]); ctx.lineWidth = 4/this.scale;
-                    ctx.moveTo((this.planePath.start.x - dx*50)/this.mapUnits*2048, (this.planePath.start.y - dy*50)/this.mapUnits*2048); ctx.lineTo((this.planePath.end.x + dx*50)/this.mapUnits*2048, (this.planePath.end.y + dy*50)/this.mapUnits*2048); ctx.stroke(); ctx.setLineDash([]);
+                const pp = this.data.planePath;
+                if (document.getElementById('planeToggle').checked && pp) {
+                    const dx = pp.end.x - pp.start.x, dy = pp.end.y - pp.start.y, len = Math.hypot(dx, dy) || 1;
+                    const ext = this.mapUnits * 1.5 / len;
+                    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.setLineDash([15 / this.scale, 15 / this.scale]); ctx.lineWidth = 3 / this.scale;
+                    ctx.moveTo(this.px(pp.start.x - dx * ext), this.px(pp.start.y - dy * ext)); ctx.lineTo(this.px(pp.end.x + dx * ext), this.px(pp.end.y + dy * ext)); ctx.stroke(); ctx.setLineDash([]);
                 }
-                ctx.beginPath(); ctx.strokeStyle = "#f97316"; ctx.lineWidth = 4/this.scale; ctx.lineJoin="round";
-                d.groundPath.forEach((p, i) => { if(i===0) ctx.moveTo(p.x/this.mapUnits*2048, p.y/this.mapUnits*2048); else ctx.lineTo(p.x/this.mapUnits*2048, p.y/this.mapUnits*2048); }); ctx.stroke();
-                if (d.landing) { ctx.fillStyle="#22c55e"; ctx.beginPath(); ctx.arc(d.landing.x/this.mapUnits*2048, d.landing.y/this.mapUnits*2048, 8/this.scale, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2/this.scale; ctx.stroke(); }
-                d.knocks.forEach(k => { const x=k.loc.x/this.mapUnits*2048, y=k.loc.y/this.mapUnits*2048, s=7/this.scale; ctx.strokeStyle="#facc15"; ctx.lineWidth=5/this.scale; ctx.beginPath(); ctx.moveTo(x-s,y); ctx.lineTo(x+s,y); ctx.moveTo(x,y-s); ctx.lineTo(x,y+s); ctx.stroke(); });
-                d.kills.forEach(k => { ctx.fillStyle="#ff4444"; ctx.font=`bold ${20/this.scale}px Arial`; ctx.fillText("💀", k.loc.x/this.mapUnits*2048-(10/this.scale), k.loc.y/this.mapUnits*2048+(8/this.scale)); });
-                if (d.death && d.death.loc) { const x=d.death.loc.x/this.mapUnits*2048, y=d.death.loc.y/this.mapUnits*2048, s=15/this.scale; ctx.strokeStyle="#ff0000"; ctx.lineWidth=8/this.scale; ctx.beginPath(); ctx.moveTo(x-s,y-s); ctx.lineTo(x+s,y+s); ctx.moveTo(x+s,y-s); ctx.lineTo(x-s,y+s); ctx.stroke(); }
+
+                const team = this.meta.team_stats.map((t) => t.name);
+                if (document.getElementById('squadToggle').checked) {
+                    team.forEach((n, i) => { if (n !== this.currentNick) this.drawPath(ctx, this.data.players[n], SQUAD_COLORS[i % 4] + '99', 2.5); });
+                }
+                this.drawPath(ctx, d, SQUAD_COLORS[team.indexOf(this.currentNick) % 4] || '#f97316', 4);
+                if (d.landing) this.drawDot(ctx, d.landing, '#22c55e', 7);
+
+                d.knockedBy.forEach((k) => { if (k.loc) this.drawDot(ctx, k.loc, '#a855f7', 6); });
+                d.knocks.forEach((k) => { if (k.loc) this.drawCross(ctx, k.loc, '#facc15', 6, 3); });
+                ctx.font = `${18 / this.scale}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                [...d.kills, ...d.finishes].forEach((k) => { if (k.loc) ctx.fillText('💀', this.px(k.loc.x), this.px(k.loc.y)); });
+                if (d.death && d.death.loc) this.drawCross(ctx, d.death.loc, '#ef4444', 12, 5);
                 ctx.restore();
             }
         }

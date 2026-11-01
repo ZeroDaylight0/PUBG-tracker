@@ -17,8 +17,14 @@ API key stays on the local machine and is never sent to the browser.
 
 - Search a player by nickname and platform.
 - Load the latest 1–20 matches.
-- Review placement, kills, damage and distance for the squad.
-- Render movement, kills, knockdowns, zones and telemetry events.
+- Review placement, kills, knocks (DBNOs), assists, damage, headshots, longest
+  kill, revives and distance for the squad.
+- Render movement, parachute drop, kills, knockdowns, deaths, revives, zones
+  and the plane path from telemetry.
+- Readable weapon names (`WeapHK416_C` → `M416`) from the official
+  [pubg/api-assets](https://github.com/pubg/api-assets) dictionaries.
+- Combat log with match time, headshots and team kills; click an entry to
+  jump to it on the map.
 - Pan, zoom and inspect events directly on the tactical map.
 - Switch between match history and squad members without leaving the map.
 - Cache map assets locally after the first request.
@@ -83,11 +89,21 @@ PUBG-tracker/
 ├── app.py                 # Local API proxy and telemetry loader
 ├── index.html             # Tactical map interface
 ├── start.html             # Search screen
+├── telemetry.js           # Telemetry parser (kills, knocks, deaths, zones)
+├── data/                  # Weapon and damage-type name dictionaries
+├── tests/                 # Python and Node tests
 ├── start.bat              # Windows launcher
 ├── requirements.txt       # Python dependencies
 ├── docs/images/          # Project screenshots
 ├── maps/                  # Runtime cache, ignored by Git
 └── vers/                  # Local development archives, ignored by Git
+```
+
+## Tests
+
+```powershell
+python -m unittest discover tests
+node --test tests/telemetry.test.js
 ```
 
 ## Architecture
@@ -112,7 +128,9 @@ authenticated requests to the PUBG API.
 ## Known limitations
 
 - Data depends on PUBG API availability and rate limits.
-- Map assets can be large and are downloaded on first use.
+- Map assets can be large and are downloaded on first use: a light preview is
+  shown immediately and the high-resolution map (~100 MB) replaces it once
+  it has been downloaded and cached in `maps/`.
 - The current server is intended for local use, not public hosting.
 
 ## License

@@ -192,6 +192,7 @@
                     <option value="kakao">Kakao</option>
                     <option value="psn">PlayStation</option>
                     <option value="xbox">Xbox</option>
+                    <option value="console">Console (cross-play)</option>
                     <option value="stadia">Stadia</option>
                 </select>
             </div>
@@ -222,6 +223,14 @@
         const loader = document.getElementById('loader');
         const errorBox = document.getElementById('error');
 
+        // Remember the last search
+        try {
+            const saved = JSON.parse(localStorage.getItem('pubgTrackerSearch') || '{}');
+            if (saved.nickname) document.getElementById('nickname').value = saved.nickname;
+            if (saved.platform) document.getElementById('platform').value = saved.platform;
+            if (saved.count) { rangeInput.value = saved.count; rangeValue.textContent = saved.count; }
+        } catch (e) { /* storage unavailable */ }
+
         rangeInput.addEventListener('input', (e) => {
             rangeValue.textContent = e.target.value;
         });
@@ -237,6 +246,8 @@
                 showError('Enter a player nickname');
                 return;
             }
+
+            try { localStorage.setItem('pubgTrackerSearch', JSON.stringify({ nickname, platform, count })); } catch (e) { /* ignore */ }
 
             loader.classList.add('active');
             errorBox.classList.remove('active');
