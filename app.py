@@ -131,10 +131,10 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): return
 
 if __name__ == "__main__":
-    print("PUBG Tracker запущен на http://localhost:8000")
+    print("PUBG Tracker is running at http://localhost:8000")
     threading.Thread(target=lambda: ThreadingHTTPServer(("", 8000), PubgProxyHandler).serve_forever(), daemon=True).start()
     webbrowser.open("http://localhost:8000/start")
     try:
         while True: import time; time.sleep(1)
     except KeyboardInterrupt:
-        print("\nСервер остановлен")
+        print("\nServer stopped")

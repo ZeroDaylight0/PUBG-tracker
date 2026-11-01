@@ -1,5 +1,9 @@
 # PUBG Tracker
 
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![PUBG API](https://img.shields.io/badge/PUBG-official_API-f2a900)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ![PUBG Tracker tactical map](docs/images/tactical-map.png)
 
 Local PUBG match analyzer built around an interactive tactical map. Search a
@@ -81,7 +85,7 @@ PUBG-tracker/
 ├── start.html             # Search screen
 ├── start.bat              # Windows launcher
 ├── requirements.txt       # Python dependencies
-├── docs/images/            # Project screenshots
+├── docs/images/          # Project screenshots
 ├── maps/                  # Runtime cache, ignored by Git
 └── vers/                  # Local development archives, ignored by Git
 ```

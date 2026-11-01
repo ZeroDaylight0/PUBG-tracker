@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -177,16 +177,16 @@
 <body>
     <div class="container">
         <h1>PUBG Tracker</h1>
-        <p class="subtitle">Анализ матчей и статистики</p>
+        <p class="subtitle">Match and stats analysis</p>
 
         <form id="startForm">
             <div class="form-group">
-                <label>Никнейм игрока</label>
-                <input type="text" id="nickname" placeholder="Введите ник" required>
+                <label>Player nickname</label>
+                <input type="text" id="nickname" placeholder="Enter a nickname" required>
             </div>
 
             <div class="form-group">
-                <label>Платформа</label>
+                <label>Platform</label>
                 <select id="platform">
                     <option value="steam">Steam</option>
                     <option value="kakao">Kakao</option>
@@ -197,19 +197,19 @@
             </div>
 
             <div class="form-group">
-                <label>Количество матчей</label>
+                <label>Number of matches</label>
                 <div class="range-container">
                     <input type="range" id="matchCount" min="1" max="20" value="5">
                     <span class="range-value" id="matchValue">5</span>
                 </div>
             </div>
 
-            <button type="submit">Загрузить матчи</button>
+            <button type="submit">Load matches</button>
         </form>
 
         <div class="loader" id="loader">
             <div class="spinner"></div>
-            <div class="loader-text">Загрузка данных...</div>
+            <div class="loader-text">Loading data...</div>
         </div>
 
         <div class="error" id="error"></div>
@@ -234,7 +234,7 @@
             const count = document.getElementById('matchCount').value;
 
             if (!nickname) {
-                showError('Введите никнейм игрока');
+                showError('Enter a player nickname');
                 return;
             }
 
@@ -254,10 +254,10 @@
                 if (result.success) {
                     window.location.href = '/';
                 } else {
-                    showError(result.error || 'Ошибка загрузки данных');
+                    showError(result.error || 'Failed to load data');
                 }
             } catch (err) {
-                showError('Ошибка соединения с сервером');
+                showError('Could not connect to the server');
             } finally {
                 loader.classList.remove('active');
                 form.querySelector('button').disabled = false;

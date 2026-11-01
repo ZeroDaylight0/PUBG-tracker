@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -161,7 +161,7 @@
             process(events, team) {
                 this.phases = []; this.playerData = {}; this.planePath = null;
 
-                // Собираем все уникальные состояния зон
+                // Collect all unique zone states
                 const zoneStates = [];
                 events.forEach(ev => {
                     if (ev._T === "LogGameStatePeriodic" && ev.gameState?.safetyZoneRadius > 0) {
@@ -174,7 +174,7 @@
                     }
                 });
 
-                // Группируем по фазам: когда белая зона меняет радиус значительно
+                // Group into phases: a phase starts when the white zone radius changes significantly
                 if (zoneStates.length > 0) {
                     let currentPhase = zoneStates[0];
                     this.phases.push(currentPhase);
@@ -183,7 +183,7 @@
                         const prev = zoneStates[i - 1];
                         const curr = zoneStates[i];
 
-                        // Новая фаза если белая зона сильно изменилась (новое сужение)
+                        // New phase when the white zone changed a lot (a new shrink)
                         if (Math.abs(curr.white.r - prev.white.r) > this.mapUnits * 0.01) {
                             this.phases.push(curr);
                         }
@@ -202,7 +202,7 @@
                             if (landTime && ev._D >= landTime) groundPath.push(ev.character.location);
                             lastPos = ev.character.location;
                         }
-                        // Ноки
+                        // Knockdowns
                         if (ev._T === "LogPlayerMakeGroggy" && ev.attacker?.name === nick && ev.victim?.name) {
                             knocks.push({
                                 loc: ev.victim.location || lastPos,
@@ -212,7 +212,7 @@
                                 time: ev._D
                             });
                         }
-                        // Убийства
+                        // Kills
                         if (ev._T === "LogPlayerKill") {
                             const info = {
                                 loc: ev.victim.location || ev.victim.position || lastPos,
@@ -262,7 +262,7 @@
                 const d = this.playerData[nick];
                 const s = this.meta.team_stats.find(t => t.name === nick);
                 
-                // ВАЖНО: Используем s.kills (из API), а не d.kills.length (из телеметрии)
+                // IMPORTANT: use s.kills (from the API), not d.kills.length (from telemetry)
                 document.getElementById('quickStats').innerHTML = `<span>KILLS: ${s.kills}</span><span>DAMAGE: ${s.damage}</span>`;
                 
                 const list = document.getElementById('eventList'); list.innerHTML = "";
@@ -274,7 +274,7 @@
                 all.forEach(e => {
                     list.innerHTML += `<div class="bg-${e.c}-500/5 border-l-2 border-${e.c}-500 p-2 text-[9px]">
                         <b>${e.t}:</b> ${e.name}
-                        <div class='text-[8px] text-slate-500'>${e.weapon} • ${e.dist}м</div>
+                        <div class='text-[8px] text-slate-500'>${e.weapon} • ${e.dist}m</div>
                     </div>`;
                 });
 
