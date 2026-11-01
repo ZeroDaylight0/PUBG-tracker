@@ -135,6 +135,20 @@
             cursor: not-allowed;
             transform: none;
         }
+        button.secondary {
+            background: transparent;
+            border: 1px solid rgba(249, 115, 22, 0.6);
+            color: #fdba74;
+            margin-top: 12px;
+        }
+        button.secondary:hover { background: rgba(249, 115, 22, 0.12); }
+        .hidden { display: none !important; }
+        .hint { font-size: 11px; color: rgba(255, 255, 255, 0.45); margin-top: 6px; line-height: 1.5; }
+        .hint a { color: #fdba74; }
+        .check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: rgba(255,255,255,0.6); text-transform: none; letter-spacing: 0; font-weight: 500; }
+        .check input { width: auto; accent-color: #f97316; }
+        .mode-note { font-size: 11px; color: rgba(255, 255, 255, 0.5); background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 10px 12px; margin-bottom: 20px; line-height: 1.5; }
+        .divider { text-align: center; font-size: 11px; color: rgba(255,255,255,0.35); margin: 18px 0 0; text-transform: uppercase; letter-spacing: 1px; }
         .loader {
             display: none;
             text-align: center;
@@ -179,7 +193,19 @@
         <h1>PUBG Tracker</h1>
         <p class="subtitle">Match and stats analysis</p>
 
+        <div class="mode-note hidden" id="browserNote">
+            Live demo: requests go from your browser straight to the official PUBG API with your own key.
+            The key stays in this browser. Try the demo matches if you don't have a key.
+        </div>
+
         <form id="startForm">
+            <div class="form-group hidden" id="keyGroup">
+                <label>PUBG API key</label>
+                <input type="password" id="apiKey" placeholder="eyJ0eXAiOi..." autocomplete="off">
+                <label class="check"><input type="checkbox" id="rememberKey"> Remember on this device</label>
+                <div class="hint">Free key: <a href="https://developer.pubg.com/" target="_blank" rel="noopener">developer.pubg.com</a> → create an app → copy the key.</div>
+            </div>
+
             <div class="form-group">
                 <label>Player nickname</label>
                 <input type="text" id="nickname" placeholder="Enter a nickname" required>
@@ -207,6 +233,8 @@
 
             <button type="submit">Load matches</button>
         </form>
+        <div class="divider">or</div>
+        <button type="button" class="secondary" id="demoBtn">Open demo matches</button>
 
         <div class="loader" id="loader">
             <div class="spinner"></div>
@@ -216,12 +244,34 @@
         <div class="error" id="error"></div>
     </div>
 
+    <script src="pubg-data.js"></script>
     <script>
         const rangeInput = document.getElementById('matchCount');
         const rangeValue = document.getElementById('matchValue');
         const form = document.getElementById('startForm');
         const loader = document.getElementById('loader');
         const errorBox = document.getElementById('error');
+
+        let mode = 'server';
+        PubgData.detectMode().then((m) => {
+            mode = m;
+            if (mode === 'browser') {
+                document.getElementById('browserNote').classList.remove('hidden');
+                document.getElementById('keyGroup').classList.remove('hidden');
+                document.getElementById('apiKey').value = PubgData.apiKey.get();
+                document.getElementById('rememberKey').checked = PubgData.apiKey.remembered();
+            }
+        });
+
+        document.getElementById('demoBtn').addEventListener('click', async () => {
+            errorBox.classList.remove('active');
+            try {
+                await PubgData.loadDemo();
+                window.location.href = 'index.html';
+            } catch (err) {
+                showError(err.message || 'Could not load the demo');
+            }
+        });
 
         // Remember the last search
         try {
@@ -253,8 +303,31 @@
             errorBox.classList.remove('active');
             form.querySelector('button').disabled = true;
 
+            if (mode === 'browser') {
+                const key = document.getElementById('apiKey').value.trim();
+                if (!key) {
+                    showError('Enter your PUBG API key or open the demo matches');
+                    loader.classList.remove('active');
+                    form.querySelector('button').disabled = false;
+                    return;
+                }
+                PubgData.apiKey.set(key, document.getElementById('rememberKey').checked);
+                try {
+                    const matches = await PubgData.loadMatchesDirect({ key, nickname, platform, count });
+                    if (!PubgData.saveSession(matches, false)) throw new Error('Browser storage is disabled');
+                    window.location.href = 'index.html';
+                } catch (err) {
+                    showError(err.message || 'Failed to load data');
+                } finally {
+                    loader.classList.remove('active');
+                    form.querySelector('button').disabled = false;
+                }
+                return;
+            }
+
             try {
-                const response = await fetch('/start_analysis', {
+                PubgData.clearSession();
+                const response = await fetch('start_analysis', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ nickname, platform, count: parseInt(count) })
@@ -263,7 +336,7 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    window.location.href = '/';
+                    window.location.href = 'index.html';
                 } else {
                     showError(result.error || 'Failed to load data');
                 }

@@ -1,0 +1,140 @@
+[
+ {
+  "match_id": "demo-1",
+  "telemetry": "demo/telemetry-1.json",
+  "searched_nick": "DemoPlayer",
+  "team_stats": [
+   {
+    "name": "DemoPlayer",
+    "kills": 3,
+    "knocks": 3,
+    "assists": 1,
+    "headshots": 1,
+    "damage": 500,
+    "revives": 0,
+    "longest": 58,
+    "survived": 1680,
+    "rank": 3,
+    "dist": 2614
+   },
+   {
+    "name": "Kotik_Pro",
+    "kills": 1,
+    "knocks": 0,
+    "assists": 1,
+    "headshots": 0,
+    "damage": 167,
+    "revives": 1,
+    "longest": 40,
+    "survived": 1601,
+    "rank": 3,
+    "dist": 3168
+   },
+   {
+    "name": "MedicMax",
+    "kills": 1,
+    "knocks": 1,
+    "assists": 2,
+    "headshots": 0,
+    "damage": 295,
+    "revives": 0,
+    "longest": 9,
+    "survived": 1640,
+    "rank": 3,
+    "dist": 3635
+   },
+   {
+    "name": "Sn1per_Wolf",
+    "kills": 1,
+    "knocks": 1,
+    "assists": 1,
+    "headshots": 0,
+    "damage": 278,
+    "revives": 0,
+    "longest": 190,
+    "survived": 1415,
+    "rank": 3,
+    "dist": 3458
+   }
+  ],
+  "map": "Baltic_Main",
+  "map_name": "Erangel",
+  "mode": "squad-fpp",
+  "duration": 1680,
+  "date": "31.10 19:42",
+  "rank": 3,
+  "kills": 3,
+  "knocks": 3,
+  "damage": 500,
+  "players": 96
+ },
+ {
+  "match_id": "demo-2",
+  "telemetry": "demo/telemetry-2.json",
+  "searched_nick": "DemoPlayer",
+  "team_stats": [
+   {
+    "name": "DemoPlayer",
+    "kills": 2,
+    "knocks": 3,
+    "assists": 0,
+    "headshots": 1,
+    "damage": 516,
+    "revives": 0,
+    "longest": 85,
+    "survived": 1850,
+    "rank": 1,
+    "dist": 3183
+   },
+   {
+    "name": "Kotik_Pro",
+    "kills": 2,
+    "knocks": 1,
+    "assists": 1,
+    "headshots": 0,
+    "damage": 205,
+    "revives": 0,
+    "longest": 39,
+    "survived": 1850,
+    "rank": 1,
+    "dist": 3228
+   },
+   {
+    "name": "MedicMax",
+    "kills": 1,
+    "knocks": 0,
+    "assists": 0,
+    "headshots": 0,
+    "damage": 175,
+    "revives": 1,
+    "longest": 30,
+    "survived": 1850,
+    "rank": 1,
+    "dist": 3017
+   },
+   {
+    "name": "Sn1per_Wolf",
+    "kills": 1,
+    "knocks": 1,
+    "assists": 1,
+    "headshots": 0,
+    "damage": 250,
+    "revives": 0,
+    "longest": 215,
+    "survived": 1500,
+    "rank": 1,
+    "dist": 2617
+   }
+  ],
+  "map": "Desert_Main",
+  "map_name": "Miramar",
+  "mode": "squad-fpp",
+  "duration": 1850,
+  "date": "30.10 17:05",
+  "rank": 1,
+  "kills": 2,
+  "knocks": 3,
+  "damage": 516,
+  "players": 94
+ }
+]

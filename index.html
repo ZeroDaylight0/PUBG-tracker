@@ -6,7 +6,8 @@
     <title>PUBG Tactical Analyzer</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="/telemetry.js"></script>
+    <script src="telemetry.js"></script>
+    <script src="pubg-data.js"></script>
     <style>
         body { background-color: #06080a; color: #eee; font-family: 'Inter', sans-serif; overflow: hidden; }
         canvas { background-color: #000; cursor: grab; display: block; }
@@ -58,7 +59,8 @@
 
     <header class="h-14 border-b border-white/5 flex items-center justify-between px-6 bg-[#0c0e12] z-50">
         <div class="flex items-center gap-4 min-w-0">
-            <a href="/start" title="New search" class="bg-orange-600 hover:bg-orange-500 p-1.5 rounded text-white"><i class="fa-solid fa-magnifying-glass"></i></a>
+            <a href="start.html" title="New search" class="bg-orange-600 hover:bg-orange-500 p-1.5 rounded text-white"><i class="fa-solid fa-magnifying-glass"></i></a>
+            <span id="modeBadge" class="hidden text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded bg-sky-500/15 text-sky-300"></span>
             <h1 id="matchTitle" class="font-black text-xs tracking-tighter uppercase italic text-slate-400 truncate">Tactical Analyzer</h1>
         </div>
         <div id="quickStats" class="text-[10px] font-black flex gap-6 text-orange-500 uppercase tracking-widest"></div>
@@ -168,10 +170,20 @@
                 document.getElementById('planeToggle').onchange = () => this.render();
                 document.getElementById('squadToggle').onchange = () => this.render();
 
-                const [list, dict] = await Promise.all([
-                    fetch('/matches_list').then((r) => r.json()),
-                    fetch('/dictionaries').then((r) => r.json()).catch(() => ({})),
-                ]);
+                this.source = await PubgData.getSource();
+                if (!this.source) { location.replace('start.html'); return; }
+                if (this.source.mode !== 'server') {
+                    const badge = document.getElementById('modeBadge');
+                    badge.textContent = this.source.mode === 'demo' ? 'Demo data' : 'Browser mode';
+                    badge.classList.remove('hidden');
+                }
+                let list, dict;
+                try {
+                    [list, dict] = await Promise.all([this.source.list(), this.source.dictionaries()]);
+                } catch (err) {
+                    this.notice(err.message); return;
+                }
+                if (!list.length) { location.replace('start.html'); return; }
                 this.dictionaries = dict;
                 const listEl = document.getElementById('matchList');
                 listEl.innerHTML = list.map((m) => `
@@ -192,23 +204,22 @@
                 this.loader(true, 'Loading match...');
                 document.querySelectorAll('.m-item').forEach((el) => el.classList.toggle('selected', el.id === `m-${idx}`));
                 try {
-                    const meta = await (await fetch(`/match_meta?i=${idx}`)).json();
+                    const meta = await this.source.meta(idx);
                     if (token !== this.loadToken) return;
                     this.meta = meta;
                     this.mapUnits = PubgTelemetry.MAP_SIZES[meta.map] || 816000;
                     document.getElementById('matchTitle').textContent = `${meta.map_name} · ${fmtMode(meta.mode)} · ${meta.date} · #${meta.rank}`;
 
                     this.loader(true, 'Downloading telemetry...');
-                    const telemetryReq = fetch(`/fetch_telemetry?url=${encodeURIComponent(meta.telemetry)}`).then((r) => {
-                        if (!r.ok) throw new Error(`Telemetry download failed (${r.status})`);
-                        return r.json();
-                    });
-                    const imgReq = this.loadImage(`/fetch_image?map_id=${encodeURIComponent(meta.map)}&q=low`);
+                    // Without telemetry the official stats are still shown, just without map events
+                    let telemetryError = null;
+                    const telemetryReq = this.source.telemetry(meta).catch((e) => { telemetryError = e; return []; });
+                    const imgReq = this.loadImage(this.source.mapUrl(meta.map, 'low'));
                     const [events, img] = await Promise.all([telemetryReq, imgReq]);
                     if (token !== this.loadToken) return;
 
                     this.mapImg = img;
-                    this.notice(img ? '' : 'Map image is unavailable');
+                    this.notice(telemetryError ? telemetryError.message : (img ? '' : 'Map image is unavailable'));
                     this.upgradeMapImage(meta.map, token);
 
                     const team = meta.team_stats.map((t) => t.name);
@@ -231,6 +242,7 @@
 
             loadImage(src) {
                 return new Promise((resolve) => {
+                    if (!src) { resolve(null); return; }
                     const img = new Image();
                     img.onload = () => resolve(img);
                     img.onerror = () => resolve(null);
@@ -240,7 +252,7 @@
 
             // Show the light image right away, swap to the high-res one once it is downloaded and cached
             async upgradeMapImage(mapId, token) {
-                const img = await this.loadImage(`/fetch_image?map_id=${encodeURIComponent(mapId)}&q=high`);
+                const img = await this.loadImage(this.source.mapUrl(mapId, 'high'));
                 if (img && token === this.loadToken) { this.mapImg = img; this.render(); }
             }
 

@@ -255,8 +255,24 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 STATIC_FILES = {
     "/start": ("start.html", "text/html; charset=utf-8"),
+    "/start.html": ("start.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/telemetry.js": ("telemetry.js", "application/javascript; charset=utf-8"),
+    "/pubg-data.js": ("pubg-data.js", "application/javascript; charset=utf-8"),
 }
+# Bundled JSON (dictionaries and demo matches) served as-is: /data/<name>.json, /demo/<name>.json
+STATIC_DIRS = ("data", "demo")
+
+
+def static_json_path(url_path):
+    parts = url_path.strip("/").split("/")
+    if len(parts) != 2 or parts[0] not in STATIC_DIRS:
+        return None
+    name = parts[1]
+    if not name.endswith(".json") or not all(c.isalnum() or c in "-_." for c in name) or name.startswith("."):
+        return None
+    path = BASE_DIR / parts[0] / name
+    return path if path.is_file() else None
 
 
 class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -305,6 +321,10 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
                     self._send_raw(content, "image/png", cache=True)
             elif parsed.path == "/dictionaries":
                 self._send_json(load_dictionaries())
+            elif parsed.path == "/mode":
+                self._send_json({"mode": "server", "api_key": bool(API_KEY)})
+            elif static_json_path(parsed.path):
+                self._send_raw(static_json_path(parsed.path).read_bytes(), "application/json")
             elif parsed.path in STATIC_FILES:
                 fname, ctype = STATIC_FILES[parsed.path]
                 self._send_file(fname, ctype)

@@ -1,0 +1,115 @@
+{
+ "data": {
+  "id": "m1",
+  "attributes": {
+   "mapName": "Baltic_Main",
+   "gameMode": "squad-fpp",
+   "createdAt": "2026-10-30T12:34:56Z",
+   "duration": 1800
+  }
+ },
+ "included": [
+  {
+   "type": "participant",
+   "id": "p1",
+   "attributes": {
+    "stats": {
+     "name": "Alpha",
+     "playerId": "account.a",
+     "kills": 3,
+     "DBNOs": 4,
+     "assists": 0,
+     "headshotKills": 0,
+     "damageDealt": 412.7,
+     "revives": 0,
+     "longestKill": 0.0,
+     "timeSurvived": 0,
+     "winPlace": 5,
+     "walkDistance": 2000.5,
+     "rideDistance": 1000.2,
+     "swimDistance": 0.0
+    }
+   }
+  },
+  {
+   "type": "participant",
+   "id": "p2",
+   "attributes": {
+    "stats": {
+     "name": "Bravo",
+     "playerId": "account.b",
+     "kills": 5,
+     "DBNOs": 2,
+     "assists": 0,
+     "headshotKills": 0,
+     "damageDealt": 0.0,
+     "revives": 0,
+     "longestKill": 0.0,
+     "timeSurvived": 0,
+     "winPlace": 5,
+     "walkDistance": 0.0,
+     "rideDistance": 0.0,
+     "swimDistance": 0.0
+    }
+   }
+  },
+  {
+   "type": "participant",
+   "id": "p3",
+   "attributes": {
+    "stats": {
+     "name": "Enemy",
+     "playerId": "account.e",
+     "kills": 1,
+     "DBNOs": 0,
+     "assists": 0,
+     "headshotKills": 0,
+     "damageDealt": 0.0,
+     "revives": 0,
+     "longestKill": 0.0,
+     "timeSurvived": 0,
+     "winPlace": 1,
+     "walkDistance": 0.0,
+     "rideDistance": 0.0,
+     "swimDistance": 0.0
+    }
+   }
+  },
+  {
+   "type": "roster",
+   "id": "r1",
+   "relationships": {
+    "participants": {
+     "data": [
+      {
+       "id": "p2"
+      },
+      {
+       "id": "p1"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "type": "roster",
+   "id": "r2",
+   "relationships": {
+    "participants": {
+     "data": [
+      {
+       "id": "p3"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "type": "asset",
+   "id": "a1",
+   "attributes": {
+    "URL": "https://telemetry-cdn.pubg.com/bluehole-pubg/steam/x.json"
+   }
+  }
+ ]
+}

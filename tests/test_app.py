@@ -117,6 +117,14 @@ class ApiErrorsTest(unittest.TestCase):
         self.assertEqual(matches[0]["searched_nick"], "Alpha")
 
 
+class StaticFilesTest(unittest.TestCase):
+    def test_only_bundled_json(self):
+        self.assertIsNotNone(app.static_json_path("/data/damageCauserName.json"))
+        self.assertIsNotNone(app.static_json_path("/demo/matches.json"))
+        for bad in ("/data/../app.py", "/data/..%2Fapp.py", "/tests/fixtures/match.json", "/data/x.py", "/demo/missing.json", "/data/.hidden.json"):
+            self.assertIsNone(app.static_json_path(bad), bad)
+
+
 class DictionaryTest(unittest.TestCase):
     def test_bundled_dictionaries(self):
         d = app.load_dictionaries()
