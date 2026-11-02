@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="telemetry.js"></script>
     <script src="pubg-data.js"></script>
+    <script src="heatmap.js"></script>
     <style>
         body { background-color: #06080a; color: #eee; font-family: 'Inter', sans-serif; overflow: hidden; }
         canvas { background-color: #000; cursor: grab; display: block; }
@@ -51,6 +52,10 @@
         .tooltip-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; font-size: 11px; }
         .tooltip-label { color: rgba(255, 255, 255, 0.5); font-weight: 500; }
         .tooltip-value { color: #fff; font-weight: 600; }
+        .tab { font-size: 8px; font-weight: 900; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; color: #64748b; background: rgba(255,255,255,0.04); }
+        .tab.active { color: #fff; }
+        .flt { background: #11151b; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; font-size: 9px; color: #cbd5e1; padding: 3px 4px; min-width: 0; }
+        .heat-legend { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #2563eb, #06b6d4, #22c55e, #facc15, #f97316, #dc2626); }
         .custom-scroll::-webkit-scrollbar { width: 3px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
     </style>
@@ -71,8 +76,27 @@
         <!-- Left: History & Team -->
         <div class="w-64 shrink-0 bg-[#0c0e12] border-r border-white/5 flex flex-col z-40">
             <div class="p-4 border-b border-white/5 h-1/2 flex flex-col overflow-hidden">
-                <h3 class="text-[9px] font-black text-slate-600 uppercase mb-3">Match History</h3>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-[9px] font-black text-slate-600 uppercase">Match History</h3>
+                    <div id="historyTabs" class="hidden flex gap-1">
+                        <button data-tab="recent" class="tab active">Search</button>
+                        <button data-tab="stored" class="tab" title="Matches saved in the local database">Stored <span id="storedCount"></span></button>
+                    </div>
+                </div>
                 <div id="matchList" class="flex-grow overflow-y-auto space-y-1 custom-scroll"></div>
+                <div id="storedPanel" class="hidden flex-grow flex flex-col overflow-hidden">
+                    <div class="grid grid-cols-3 gap-1 mb-2">
+                        <select id="fltPlayer" class="flt" title="Player"></select>
+                        <select id="fltMap" class="flt" title="Map"></select>
+                        <select id="fltMode" class="flt" title="Mode"></select>
+                    </div>
+                    <div id="storedList" class="flex-grow overflow-y-auto space-y-1 custom-scroll"></div>
+                    <div class="flex items-center justify-between pt-2 text-[9px] text-slate-500">
+                        <button id="pagePrev" class="tab">‹ Prev</button>
+                        <span id="pageInfo"></span>
+                        <button id="pageNext" class="tab">Next ›</button>
+                    </div>
+                </div>
             </div>
             <div class="p-4 h-1/2 flex flex-col overflow-hidden">
                 <h3 class="text-[9px] font-black text-slate-600 uppercase mb-3">Squad Roster</h3>
@@ -90,6 +114,19 @@
                 <div><span class="inline-block w-[14px] text-center">💀</span> Kill</div>
                 <div><i class="fa-solid fa-circle-xmark text-purple-400"></i> Knocked</div>
                 <div><i class="fa-solid fa-xmark text-red-500"></i> Death</div>
+            </div>
+            <div id="heatCard" class="hidden absolute top-3 right-3 ui-card rounded-lg p-3 text-[9px] text-slate-300 z-40 w-52 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="font-black uppercase text-orange-500">Heatmap</span>
+                    <span id="heatStatus" class="text-slate-500 text-right"></span>
+                </div>
+                <div id="heatLayers" class="grid grid-cols-2 gap-x-2 gap-y-1"></div>
+                <select id="heatScope" class="flt w-full">
+                    <option value="match">This match</option>
+                    <option value="all">All matches on this map</option>
+                </select>
+                <div class="heat-legend"></div>
+                <div class="flex justify-between text-slate-500"><span>low</span><span>high</span></div>
             </div>
             <div id="phaseNav" class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-wrap justify-center gap-1.5 p-1.5 ui-card rounded-xl shadow-2xl z-50 border border-white/10"></div>
             <div id="tooltip"></div>
@@ -113,6 +150,10 @@
                         <span class="text-[9px] font-bold text-slate-500 group-hover:text-slate-300">WHOLE SQUAD</span>
                         <input type="checkbox" id="squadToggle" class="accent-orange-500">
                     </label>
+                    <label class="flex items-center justify-between cursor-pointer group">
+                        <span class="text-[9px] font-bold text-slate-500 group-hover:text-slate-300">HEATMAP</span>
+                        <input type="checkbox" id="heatToggle" class="accent-orange-500">
+                    </label>
                 </div>
             </div>
         </div>
@@ -134,6 +175,7 @@
         const fmtMode = (m) => MODE_NAMES[m] || String(m || '').replace(/-/g, ' ');
         // Numbers from match data go into HTML: never trust them to be numbers
         const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+        const STORED_PAGE_SIZE = 15;
 
         class Visualizer {
             constructor() {
@@ -145,6 +187,9 @@
                 this.currentPhase = -1;
                 this.loadToken = 0;
                 this.dictionaries = null;
+                this.events = [];
+                this.heat = { scope: 'match', layers: new Set(PubgHeatmap.LAYERS.filter((l) => l.on).map((l) => l.id)), canvas: null, token: 0, cache: new Map() };
+                this.stored = { page: 1, filtersLoaded: false };
                 this.setupInteractions();
                 this.initApp();
             }
@@ -171,6 +216,7 @@
                 window.addEventListener('resize', () => this.resize());
                 document.getElementById('planeToggle').onchange = () => this.render();
                 document.getElementById('squadToggle').onchange = () => this.render();
+                this.setupHeatmapUI();
 
                 this.source = await PubgData.getSource();
                 if (!this.source) { location.replace('start.html'); return; }
@@ -179,34 +225,105 @@
                     badge.textContent = this.source.mode === 'demo' ? 'Demo data' : 'Browser mode';
                     badge.classList.remove('hidden');
                 }
+                document.querySelector('#heatScope option[value="all"]').textContent =
+                    this.source.mode === 'server' ? 'All stored matches on this map' : 'All loaded matches on this map';
                 let list, dict;
                 try {
                     [list, dict] = await Promise.all([this.source.list(), this.source.dictionaries()]);
                 } catch (err) {
                     this.notice(err.message); return;
                 }
-                if (!list.length) { location.replace('start.html'); return; }
                 this.dictionaries = dict;
+                const storedCount = this.source.stored ? await this.setupStoredUI() : 0;
+                if (!list.length && !storedCount) { location.replace('start.html'); return; }
+
                 const listEl = document.getElementById('matchList');
-                listEl.innerHTML = list.map((m) => `
-                    <div data-match="${num(m.id)}" id="m-${num(m.id)}" class="m-item p-2.5 rounded bg-white/5 flex justify-between items-center group">
+                listEl.innerHTML = list.map((m) => this.matchItemHtml(m, `r-${num(m.id)}`)).join('');
+                listEl.onclick = (e) => { const it = e.target.closest('[data-key]'); if (it) this.loadMatch(num(it.dataset.id), it.dataset.key); };
+                if (list.length && location.hash !== '#stored') this.loadMatch(1, 'r-1');
+                else { this.showTab('stored'); this.loadStoredPage(1, true); }
+            }
+
+            matchItemHtml(m, key, extra = {}) {
+                const attrs = Object.entries(extra).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('');
+                const rank = num(m.rank);
+                return `
+                    <div data-key="${esc(key)}" data-id="${num(m.id)}"${attrs} class="m-item p-2.5 rounded bg-white/5 flex justify-between items-center group">
                         <div class="truncate mr-2">
-                            <div class="text-[10px] font-black group-hover:text-orange-500 uppercase">${esc(m.map)}</div>
+                            <div class="text-[10px] font-black group-hover:text-orange-500 uppercase">${esc(m.map)}${m.player ? ` <span class="text-slate-500 normal-case font-bold">· ${esc(m.player)}</span>` : ''}</div>
                             <div class="text-[8px] text-slate-500">${esc(m.date)} · ${esc(fmtMode(m.mode))}</div>
                             <div class="text-[8px] text-slate-400">${num(m.kills)} kills · ${num(m.knocks)} knocks · ${num(m.damage)} dmg</div>
                         </div>
-                        <div class="text-[11px] font-black ${num(m.rank) === 1 ? 'text-yellow-500' : 'text-slate-500'}">#${num(m.rank)}</div>
-                    </div>`).join('');
-                listEl.onclick = (e) => { const it = e.target.closest('[data-match]'); if (it) this.loadMatch(+it.dataset.match); };
-                if (list.length) this.loadMatch(1);
+                        <div class="text-[11px] font-black ${rank === 1 ? 'text-yellow-500' : 'text-slate-500'}">#${rank}</div>
+                    </div>`;
             }
 
-            async loadMatch(idx) {
+            // --- Local match database (server mode) ---
+            async setupStoredUI() {
+                let f;
+                try { f = await this.source.historyFilters(); } catch (e) { return 0; }
+                document.getElementById('historyTabs').classList.remove('hidden');
+                document.getElementById('storedCount').textContent = `(${num(f.counts && f.counts.matches)})`;
+                const opt = (v, label) => `<option value="${esc(v)}">${esc(label)}</option>`;
+                document.getElementById('fltPlayer').innerHTML = opt('', 'All players') + f.players.map((p) => opt(p.account_id, `${p.name} (${num(p.matches)})`)).join('');
+                document.getElementById('fltMap').innerHTML = opt('', 'All maps') + f.maps.map((m) => opt(m.id, m.name)).join('');
+                document.getElementById('fltMode').innerHTML = opt('', 'All modes') + f.modes.map((m) => opt(m, fmtMode(m))).join('');
+                ['fltPlayer', 'fltMap', 'fltMode'].forEach((id) => { document.getElementById(id).onchange = () => this.loadStoredPage(1); });
+                document.getElementById('historyTabs').onclick = (e) => {
+                    const b = e.target.closest('[data-tab]');
+                    if (!b) return;
+                    this.showTab(b.dataset.tab);
+                    if (b.dataset.tab === 'stored') this.loadStoredPage(this.stored.page);
+                };
+                document.getElementById('pagePrev').onclick = () => this.loadStoredPage(this.stored.page - 1);
+                document.getElementById('pageNext').onclick = () => this.loadStoredPage(this.stored.page + 1);
+                document.getElementById('storedList').onclick = (e) => {
+                    const it = e.target.closest('[data-key]');
+                    if (it) this.loadMatch({ match_id: it.dataset.mid, account_id: it.dataset.acc }, it.dataset.key);
+                };
+                return num(f.counts && f.counts.matches);
+            }
+
+            showTab(tab) {
+                document.querySelectorAll('#historyTabs [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+                document.getElementById('matchList').classList.toggle('hidden', tab !== 'recent');
+                document.getElementById('storedPanel').classList.toggle('hidden', tab !== 'stored');
+            }
+
+            async loadStoredPage(page, openFirst) {
+                const params = {
+                    player: document.getElementById('fltPlayer').value, map: document.getElementById('fltMap').value,
+                    mode: document.getElementById('fltMode').value, page: Math.max(1, page), per_page: STORED_PAGE_SIZE,
+                };
+                const listEl = document.getElementById('storedList');
+                let res;
+                try { res = await this.source.history(params); } catch (e) { listEl.innerHTML = `<div class="text-[9px] text-red-400">${esc(e.message)}</div>`; return; }
+                this.stored.page = res.page;
+                listEl.innerHTML = res.items.length ? res.items.map((m) => this.matchItemHtml(
+                    { map: m.map_name, player: m.name, date: m.date, mode: m.game_mode, kills: m.kills, knocks: m.knocks, damage: m.damage, rank: m.rank },
+                    `s-${m.match_id}-${m.account_id}`, { mid: m.match_id, acc: m.account_id })).join('')
+                    : '<div class="text-[9px] text-slate-600">No stored matches for this filter</div>';
+                document.getElementById('pageInfo').textContent = `${res.page} / ${res.pages} · ${res.total} matches`;
+                document.getElementById('pagePrev').disabled = res.page <= 1;
+                document.getElementById('pageNext').disabled = res.page >= res.pages;
+                this.markSelected();
+                if (openFirst && res.items.length) {
+                    const m = res.items[0];
+                    this.loadMatch({ match_id: m.match_id, account_id: m.account_id }, `s-${m.match_id}-${m.account_id}`);
+                }
+            }
+
+            markSelected() {
+                document.querySelectorAll('.m-item').forEach((el) => el.classList.toggle('selected', el.dataset.key === this.selectedKey));
+            }
+
+            async loadMatch(ref, key) {
                 const token = ++this.loadToken;
                 this.loader(true, 'Loading match...');
-                document.querySelectorAll('.m-item').forEach((el) => el.classList.toggle('selected', el.id === `m-${idx}`));
+                this.selectedKey = key;
+                this.markSelected();
                 try {
-                    const meta = await this.source.meta(idx);
+                    const meta = await this.source.meta(ref);
                     if (token !== this.loadToken) return;
                     this.meta = meta;
                     this.mapUnits = PubgTelemetry.MAP_SIZES[meta.map] || 816000;
@@ -224,6 +341,7 @@
                     this.notice(telemetryError ? telemetryError.message : (img ? '' : 'Map image is unavailable'));
                     this.upgradeMapImage(meta.map, token);
 
+                    this.events = events;
                     const team = meta.team_stats.map((t) => t.name);
                     const ranks = Object.fromEntries(meta.team_stats.map((t) => [t.name, t.rank]));
                     this.data = PubgTelemetry.parse(events, team, {
@@ -308,6 +426,7 @@
                     stat('Distance', `${(num(s.dist) / 1000).toFixed(1)}km`),
                 ].join('');
                 this.autoFocus(); this.render();
+                this.updateHeatmap();
             }
 
             eventHtml(e, i) {
@@ -413,6 +532,67 @@
                 tip.style.top = Math.min(my + 15, vh - tip.offsetHeight - 8) + 'px';
             }
 
+            // --- Heatmap ---
+            setupHeatmapUI() {
+                const layersEl = document.getElementById('heatLayers');
+                layersEl.innerHTML = PubgHeatmap.LAYERS.map((l) => `
+                    <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" data-layer="${l.id}" class="accent-orange-500" ${this.heat.layers.has(l.id) ? 'checked' : ''}> ${esc(l.label)}</label>`).join('');
+                layersEl.onchange = (e) => {
+                    const id = e.target.dataset.layer;
+                    if (!id) return;
+                    if (e.target.checked) this.heat.layers.add(id); else this.heat.layers.delete(id);
+                    this.updateHeatmap();
+                };
+                document.getElementById('heatToggle').onchange = (e) => {
+                    document.getElementById('heatCard').classList.toggle('hidden', !e.target.checked);
+                    this.updateHeatmap();
+                };
+                document.getElementById('heatScope').onchange = (e) => { this.heat.scope = e.target.value; this.updateHeatmap(); };
+            }
+
+            heatStatus(text) { document.getElementById('heatStatus').textContent = text || ''; }
+
+            async heatPoints(scope, player) {
+                if (scope === 'match') return { matches: 1, layers: PubgHeatmap.extractPoints(this.events, player) };
+                const key = `${this.meta.map}|${player.account_id || player.name}`;
+                if (!this.heat.cache.has(key)) {
+                    const res = await this.source.heatmapAll(this.meta, player, PubgHeatmap.extractPoints,
+                        (i, n) => this.heatStatus(`Loading ${i}/${n}...`));
+                    // A server answer without every match's telemetry is not cached: it fills in as downloads finish
+                    if (!res.missing_telemetry || this.source.mode !== 'server') this.heat.cache.set(key, res);
+                    return res;
+                }
+                return this.heat.cache.get(key);
+            }
+
+            async updateHeatmap() {
+                const token = ++this.heat.token;
+                const on = document.getElementById('heatToggle').checked;
+                if (!on || !this.meta || !this.currentNick) { this.heat.canvas = null; this.render(); return; }
+                const s = this.meta.team_stats.find((t) => t.name === this.currentNick) || {};
+                const player = { name: this.currentNick, account_id: s.account_id || '' };
+                const scope = this.heat.scope;
+                this.heatStatus('Loading...');
+                let res;
+                try {
+                    res = await this.heatPoints(scope, player);
+                } catch (e) {
+                    if (token === this.heat.token) { this.heatStatus(e.message || 'Heatmap failed'); this.heat.canvas = null; this.render(); }
+                    return;
+                }
+                if (token !== this.heat.token) return;
+                const grid = PubgHeatmap.buildGrid(res.layers, [...this.heat.layers], { size: 256, mapUnits: this.mapUnits });
+                const c = document.createElement('canvas');
+                c.width = c.height = grid.size;
+                c.getContext('2d').putImageData(new ImageData(PubgHeatmap.colorize(grid), grid.size, grid.size), 0, 0);
+                this.heat.canvas = grid.points ? c : null;
+                const n = num(res.matches);
+                let status = scope === 'match' ? `${grid.points} points` : `${n} match${n === 1 ? '' : 'es'} · ${grid.points} pts`;
+                if (scope !== 'match' && num(res.missing_telemetry)) status += ` (${num(res.missing_telemetry)} downloading)`;
+                this.heatStatus(grid.points ? status : 'No data for these layers');
+                this.render();
+            }
+
             drawPath(ctx, d, color, width) {
                 if (d.jump && d.landing) {
                     ctx.beginPath(); ctx.strokeStyle = color + '88'; ctx.setLineDash([6 / this.scale, 6 / this.scale]); ctx.lineWidth = 2 / this.scale;
@@ -446,6 +626,7 @@
                 ctx.imageSmoothingEnabled = true;
                 if (this.mapImg) ctx.drawImage(this.mapImg, 0, 0, 2048, 2048);
                 else { ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, 2048, 2048); }
+                if (this.heat.canvas) ctx.drawImage(this.heat.canvas, 0, 0, 2048, 2048);
 
                 const p = this.data.phases[this.currentPhase];
                 if (p) {

@@ -41,6 +41,7 @@
     function participantStats(s) {
         return {
             name: s.name || '',
+            account_id: s.playerId || '',
             kills: s.kills || 0,
             knocks: s.DBNOs || 0,
             assists: s.assists || 0,
@@ -86,7 +87,7 @@
     }
 
     function listItem(m, i) {
-        return { id: i + 1, map: m.map_name, mode: m.mode, date: m.date, rank: m.rank, kills: m.kills, knocks: m.knocks, damage: m.damage };
+        return { id: i + 1, match_id: m.match_id, map: m.map_name, mode: m.mode, date: m.date, rank: m.rank, kills: m.kills, knocks: m.knocks, damage: m.damage };
     }
 
     async function apiGet(url, key, fetchImpl) {
@@ -140,18 +141,36 @@
         return res.json();
     }
 
+    const query = (params) => Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+
+    // ref: list index of the latest search (number), or a stored match { match_id, account_id }
     class ServerSource {
-        constructor() { this.mode = 'server'; }
+        constructor() { this.mode = 'server'; this.stored = true; }
         list() { return getJson('matches_list', 'Match list'); }
-        meta(i) { return getJson(`match_meta?i=${i}`, 'Match'); }
-        telemetry(meta) { return getJson(`fetch_telemetry?url=${encodeURIComponent(meta.telemetry)}`, 'Telemetry download'); }
-        mapUrl(map, q) { return `fetch_image?map_id=${encodeURIComponent(map)}&q=${q}`; }
+        meta(ref) {
+            if (ref && typeof ref === 'object') return getJson(`match_meta?${query({ match_id: ref.match_id, account_id: ref.account_id })}`, 'Match');
+            return getJson(`match_meta?i=${encodeURIComponent(ref)}`, 'Match');
+        }
+        telemetry(meta) { return getJson(`fetch_telemetry?${query({ match_id: meta.match_id })}`, 'Telemetry download'); }
+        mapUrl(map, q) { return `fetch_image?${query({ map_id: map, q })}`; }
         dictionaries() { return getJson('dictionaries', 'Dictionaries').catch(() => ({})); }
+        // Local match database
+        history(params) { return getJson(`api/history?${query(params || {})}`, 'Stored matches'); }
+        historyFilters() { return getJson('api/history/filters', 'Stored matches'); }
+        // Every stored match of this player on the map, aggregated by the server
+        heatmapAll(meta, player) {
+            return getJson(`api/heatmap?${query({ account_id: player.account_id, map: meta.map })}`, 'Heatmap');
+        }
     }
 
     // Matches are kept in sessionStorage; telemetry and map images are fetched straight from PUBG / GitHub
     class BrowserSource {
-        constructor(session) { this.session = session; this.mode = session.demo ? 'demo' : 'browser'; }
+        constructor(session) {
+            this.session = session; this.mode = session.demo ? 'demo' : 'browser'; this.stored = false;
+            this.heatCache = new Map();
+        }
         async list() { return this.session.matches.map(listItem); }
         async meta(i) {
             const m = this.session.matches[i - 1];
@@ -161,6 +180,27 @@
         telemetry(meta) {
             if (!TELEMETRY_URL.test(String(meta.telemetry || ''))) return Promise.reject(new Error('Telemetry URL is not allowed'));
             return getJson(meta.telemetry, 'Telemetry download');
+        }
+        // No database here: aggregate the matches of this session that were played on the same map
+        async heatmapAll(meta, player, extract, onProgress) {
+            const same = this.session.matches.filter((m) => m.map === meta.map);
+            const layers = {};
+            let used = 0;
+            for (const [i, m] of same.entries()) {
+                const key = `${m.match_id}|${player.name}`;
+                if (!this.heatCache.has(key)) {
+                    if (onProgress) onProgress(i + 1, same.length);
+                    try {
+                        this.heatCache.set(key, extract(await this.telemetry(m), player));
+                    } catch (e) {
+                        continue;
+                    }
+                }
+                const pts = this.heatCache.get(key);
+                for (const [k, v] of Object.entries(pts)) (layers[k] = layers[k] || []).push(...v);
+                used++;
+            }
+            return { map: meta.map, matches: used, stored_matches: same.length, missing_telemetry: same.length - used, layers };
         }
         mapUrl(map, q) {
             const name = MAP_ASSETS[map];
@@ -173,12 +213,20 @@
     }
 
     // Is the local Python server behind this page?
-    async function detectMode() {
+    // /mode of the local server ({ mode, api_key, stored }), or null on static hosting
+    async function serverInfo() {
         try {
             const r = await fetch('mode', { cache: 'no-store' });
-            if (r.ok && (await r.json()).mode === 'server') return 'server';
+            if (r.ok) {
+                const info = await r.json();
+                if (info && info.mode === 'server') return info;
+            }
         } catch (e) { /* static hosting */ }
-        return 'browser';
+        return null;
+    }
+
+    async function detectMode() {
+        return (await serverInfo()) ? 'server' : 'browser';
     }
 
     async function getSource() {
@@ -210,6 +258,6 @@
 
     return {
         MAP_NAMES, MAP_ASSETS, TELEMETRY_URL, PubgApiError, summarizeMatch, participantStats, formatDate, loadMatchesDirect,
-        ServerSource, BrowserSource, detectMode, getSource, saveSession, clearSession, loadDemo, apiKey, listItem,
+        ServerSource, BrowserSource, serverInfo, detectMode, getSource, saveSession, clearSession, loadDemo, apiKey, listItem,
     };
 });

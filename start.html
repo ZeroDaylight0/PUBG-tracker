@@ -235,6 +235,7 @@
         </form>
         <div class="divider">or</div>
         <button type="button" class="secondary" id="demoBtn">Open demo matches</button>
+        <button type="button" class="secondary hidden" id="storedBtn" style="margin-top: 10px">Browse stored matches</button>
 
         <div class="loader" id="loader">
             <div class="spinner"></div>
@@ -253,8 +254,15 @@
         const errorBox = document.getElementById('error');
 
         let mode = 'server';
-        PubgData.detectMode().then((m) => {
-            mode = m;
+        PubgData.serverInfo().then((info) => {
+            mode = info ? 'server' : 'browser';
+            const stored = info && info.stored ? Number(info.stored.matches) || 0 : 0;
+            if (stored > 0) {
+                const btn = document.getElementById('storedBtn');
+                btn.textContent = `Browse stored matches (${stored})`;
+                btn.classList.remove('hidden');
+                btn.addEventListener('click', () => { PubgData.clearSession(); window.location.href = 'index.html#stored'; });
+            }
             if (mode === 'browser') {
                 document.getElementById('browserNote').classList.remove('hidden');
                 document.getElementById('keyGroup').classList.remove('hidden');
