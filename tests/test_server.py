@@ -265,5 +265,30 @@ class ServerTest(unittest.TestCase):
         self.assertEqual((res.status, res.getheader("Location")), (302, "/start"))
 
 
+class PrefetcherTest(unittest.TestCase):
+    def test_jobs_added_while_the_worker_exits_still_run(self):
+        done, injected = [], []
+        pf = app.TelemetryPrefetcher()
+        orig_get = pf.queue.get
+
+        def get(timeout=None):
+            # Simulate the worker timing out on an empty queue, then a job arriving before it decides to exit
+            if not injected and pf.queue.empty():
+                injected.append(True)
+                pf.queue.put("late")
+                with pf.lock:
+                    pf.pending.add("late")
+                raise app.queue.Empty
+            return orig_get(timeout=0.2)
+
+        pf.queue.get = get
+        with mock.patch.object(app, "ensure_telemetry", side_effect=lambda mid: done.append(mid)):
+            pf.enqueue(["m1"])
+            pf.thread.join(5)
+        self.assertEqual(sorted(done), ["late", "m1"])
+        self.assertIsNone(pf.thread)
+        self.assertEqual(pf.pending, set())
+
+
 if __name__ == "__main__":
     unittest.main()

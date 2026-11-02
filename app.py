@@ -370,7 +370,7 @@ class TelemetryPrefetcher:
                 if mid not in self.pending:
                     self.pending.add(mid)
                     self.queue.put(mid)
-            if self.pending and (self.thread is None or not self.thread.is_alive()):
+            if self.pending and self.thread is None:
                 self.thread = threading.Thread(target=self._run, name="telemetry-prefetch", daemon=True)
                 self.thread.start()
 
@@ -379,7 +379,12 @@ class TelemetryPrefetcher:
             try:
                 mid = self.queue.get(timeout=5)
             except queue.Empty:
-                return
+                # Decide to exit under the lock enqueue() uses, so a job added meanwhile is never stranded
+                with self.lock:
+                    if self.queue.empty():
+                        self.thread = None
+                        return
+                continue
             try:
                 ensure_telemetry(mid)
             except Exception as e:
