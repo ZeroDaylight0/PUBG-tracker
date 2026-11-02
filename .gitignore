@@ -23,3 +23,9 @@ vers/
 # OS files
 Thumbs.db
 Desktop.ini
+
+# Local match database (created on first run, see PUBG_TRACKER_DATA_DIR)
+storage/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

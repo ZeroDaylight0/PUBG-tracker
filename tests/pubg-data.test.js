@@ -1,4 +1,4 @@
-// Run with: node --test tests/*.test.js
+// Run with: node --test tests/
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -67,4 +67,63 @@ test('demo matches: telemetry agrees with the match stats', () => {
             if (s.rank !== 1) assert.ok(p.death && !p.death.unknown, `${s.name} death`);
         }
     }
+});
+
+test('summarizeMatch exposes account ids for the heatmap', () => {
+    const m = D.summarizeMatch(json('tests', 'fixtures', 'match.json'), 'account.a', 'alpha');
+    assert.deepStrictEqual(m.team_stats.map((t) => t.account_id), ['account.a', 'account.b']);
+});
+
+async function withFetch(fake, fn) {
+    const orig = globalThis.fetch;
+    globalThis.fetch = fake;
+    try { return await fn(); } finally { globalThis.fetch = orig; }
+}
+
+test('server source: match ids, history and heatmap URLs are encoded', async () => {
+    const urls = [];
+    const fake = async (url) => { urls.push(url); return { ok: true, status: 200, json: async () => ({}) }; };
+    const src = new D.ServerSource();
+    await withFetch(fake, async () => {
+        await src.meta(2);
+        await src.meta({ match_id: 'a&b=c', account_id: 'account.x' });
+        await src.telemetry({ match_id: 'm1', telemetry: 'https://evil.example/x.json' });
+        await src.history({ player: 'A B', map: '', mode: 'squad-fpp', page: 2 });
+        await src.heatmapAll({ map: 'Baltic_Main' }, { account_id: 'account.a', name: 'Alpha' });
+    });
+    assert.deepStrictEqual(urls, [
+        'match_meta?i=2',
+        'match_meta?match_id=a%26b%3Dc&account_id=account.x',
+        'fetch_telemetry?match_id=m1', // the server looks the URL up itself, the browser never sends one
+        'api/history?player=A%20B&mode=squad-fpp&page=2',
+        'api/heatmap?account_id=account.a&map=Baltic_Main',
+    ]);
+});
+
+test('browser source only downloads telemetry from the official CDN or the demo', async () => {
+    assert.ok(D.TELEMETRY_URL.test('https://telemetry-cdn.pubg.com/bluehole-pubg/steam/2026/x.json'));
+    assert.ok(D.TELEMETRY_URL.test('demo/telemetry-1.json'));
+    for (const bad of ['https://telemetry-cdn.pubg.com.evil.com/x', 'http://telemetry-cdn.pubg.com/x', 'javascript:alert(1)', '//evil.com/x', 'demo/../app.py']) {
+        assert.ok(!D.TELEMETRY_URL.test(bad), bad);
+    }
+    const src = new D.BrowserSource({ matches: [], demo: false });
+    await assert.rejects(src.telemetry({ telemetry: 'https://evil.example/x.json' }), /not allowed/);
+});
+
+test('browser source aggregates the heatmap over session matches on the same map', async () => {
+    const H = require('../heatmap.js');
+    const matches = json('demo', 'matches.json');
+    const extra = Object.assign({}, matches[0], { match_id: 'copy', telemetry: matches[0].telemetry });
+    const src = new D.BrowserSource({ matches: [...matches, extra], demo: true });
+    const fetched = [];
+    const fake = async (url) => { fetched.push(url); return { ok: true, status: 200, json: async () => json(url) }; };
+    const player = { name: 'DemoPlayer', account_id: '' };
+    const res = await withFetch(fake, () => src.heatmapAll(matches[0], player, H.extractPoints));
+    assert.strictEqual(res.matches, 2); // two Erangel matches, Miramar is skipped
+    const single = H.extractPoints(json(matches[0].telemetry), player);
+    assert.strictEqual(res.layers.landing.length, 2 * single.landing.length);
+    assert.strictEqual(res.layers.kills.length, 2 * single.kills.length);
+    // Second call is served from the cache
+    await withFetch(fake, () => src.heatmapAll(matches[0], player, H.extractPoints));
+    assert.strictEqual(fetched.length, 2);
 });
