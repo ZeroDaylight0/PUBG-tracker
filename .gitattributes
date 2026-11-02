@@ -1,0 +1,7 @@
+# Normalize text files; launchers keep the line endings their shell needs
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
