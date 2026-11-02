@@ -6,7 +6,7 @@ Thanks for your interest in improving PUBG Tracker!
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -r requirements.txt   # Windows: .venv\Scripts\pip
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt   # Windows: .venv\Scripts\pip
 python app.py
 ```
 
