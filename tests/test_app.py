@@ -1,4 +1,4 @@
-"""Run with: python -m unittest discover tests"""
+"""Run with: python -m pytest tests  (or: python -m unittest discover tests)"""
 import sys
 import tempfile
 import unittest
@@ -118,8 +118,9 @@ class ApiErrorsTest(unittest.TestCase):
                 return MATCH
             raise app.PubgApiError("boom")
 
-        with mock.patch.object(app, "api_get", side_effect=fake):
-            matches = app.load_matches("alpha", "steam", 5)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp, \
+                mock.patch.object(app, "api_get", side_effect=fake):
+            matches = app.load_matches("alpha", "steam", 5, db=app.Database.in_dir(tmp), prefetch=False)
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["searched_nick"], "Alpha")
 
