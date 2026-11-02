@@ -23,6 +23,8 @@
         low: (n) => `https://raw.githubusercontent.com/pubg/api-assets/master/Assets/Maps/${n}_Low_Res.png`,
         high: (n) => `https://media.githubusercontent.com/media/pubg/api-assets/master/Assets/Maps/${n}_High_Res.png`,
     };
+    // Telemetry may only come from the official CDN (or the bundled demo files)
+    const TELEMETRY_URL = /^(https:\/\/telemetry-cdn\.pubg\.com\/[^\s]*|demo\/telemetry-\d+\.json)$/;
     const STORE_KEY = 'pubgTrackerSession';
     const KEY_KEY = 'pubgTrackerApiKey';
     const MAX_MATCHES = 20;
@@ -157,6 +159,7 @@
             return m;
         }
         telemetry(meta) {
+            if (!TELEMETRY_URL.test(String(meta.telemetry || ''))) return Promise.reject(new Error('Telemetry URL is not allowed'));
             return getJson(meta.telemetry, 'Telemetry download');
         }
         mapUrl(map, q) {
@@ -206,7 +209,7 @@
     };
 
     return {
-        MAP_NAMES, MAP_ASSETS, PubgApiError, summarizeMatch, participantStats, formatDate, loadMatchesDirect,
+        MAP_NAMES, MAP_ASSETS, TELEMETRY_URL, PubgApiError, summarizeMatch, participantStats, formatDate, loadMatchesDirect,
         ServerSource, BrowserSource, detectMode, getSource, saveSession, clearSession, loadDemo, apiKey, listItem,
     };
 });

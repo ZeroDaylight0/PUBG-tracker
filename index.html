@@ -132,6 +132,8 @@
         const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const fmtClock = (t) => t == null ? '' : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
         const fmtMode = (m) => MODE_NAMES[m] || String(m || '').replace(/-/g, ' ');
+        // Numbers from match data go into HTML: never trust them to be numbers
+        const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
         class Visualizer {
             constructor() {
@@ -187,13 +189,13 @@
                 this.dictionaries = dict;
                 const listEl = document.getElementById('matchList');
                 listEl.innerHTML = list.map((m) => `
-                    <div data-match="${m.id}" id="m-${m.id}" class="m-item p-2.5 rounded bg-white/5 flex justify-between items-center group">
+                    <div data-match="${num(m.id)}" id="m-${num(m.id)}" class="m-item p-2.5 rounded bg-white/5 flex justify-between items-center group">
                         <div class="truncate mr-2">
                             <div class="text-[10px] font-black group-hover:text-orange-500 uppercase">${esc(m.map)}</div>
                             <div class="text-[8px] text-slate-500">${esc(m.date)} · ${esc(fmtMode(m.mode))}</div>
-                            <div class="text-[8px] text-slate-400">${m.kills} kills · ${m.knocks} knocks · ${m.damage} dmg</div>
+                            <div class="text-[8px] text-slate-400">${num(m.kills)} kills · ${num(m.knocks)} knocks · ${num(m.damage)} dmg</div>
                         </div>
-                        <div class="text-[11px] font-black ${m.rank === 1 ? 'text-yellow-500' : 'text-slate-500'}">#${m.rank}</div>
+                        <div class="text-[11px] font-black ${num(m.rank) === 1 ? 'text-yellow-500' : 'text-slate-500'}">#${num(m.rank)}</div>
                     </div>`).join('');
                 listEl.onclick = (e) => { const it = e.target.closest('[data-match]'); if (it) this.loadMatch(+it.dataset.match); };
                 if (list.length) this.loadMatch(1);
@@ -261,7 +263,7 @@
                 el.innerHTML = stats.map((t, i) => `
                     <button data-nick="${esc(t.name)}" class="squad-btn btn w-full p-2.5 rounded text-left bg-white/5 hover:bg-white/10 flex justify-between items-center group">
                         <span class="truncate group-hover:text-orange-500"><span style="color:${SQUAD_COLORS[i % 4]}">●</span> ${esc(t.name)}</span>
-                        <span class="opacity-60 text-[8px] font-black whitespace-nowrap">${t.kills}K · ${t.knocks}DB</span>
+                        <span class="opacity-60 text-[8px] font-black whitespace-nowrap">${num(t.kills)}K · ${num(t.knocks)}DB</span>
                     </button>`).join('');
                 el.onclick = (e) => { const b = e.target.closest('[data-nick]'); if (b) this.selectPlayer(b.dataset.nick); };
             }
@@ -283,7 +285,7 @@
 
                 // Counters come from the official match stats; telemetry gives positions and details
                 document.getElementById('quickStats').innerHTML =
-                    `<span>Kills: ${s.kills}</span><span>Knocks: ${s.knocks}</span><span>Damage: ${s.damage}</span>`;
+                    `<span>Kills: ${num(s.kills)}</span><span>Knocks: ${num(s.knocks)}</span><span>Damage: ${num(s.damage)}</span>`;
 
                 const list = document.getElementById('eventList');
                 list.innerHTML = d.timeline.length ? d.timeline.map((e, i) => this.eventHtml(e, i)).join('')
@@ -293,17 +295,17 @@
                     if (it) this.focusOn(d.timeline[+it.dataset.ev].loc);
                 };
 
-                const stat = (label, value, cls = '') => `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v ${cls}">${value}</div></div>`;
+                const stat = (label, value, cls = '') => `<div class="stat"><div class="stat-l">${label}</div><div class="stat-v ${cls}">${esc(value)}</div></div>`;
                 document.getElementById('playerStats').innerHTML = [
-                    stat('Kills', s.kills, 'text-orange-500'),
-                    stat('Knocks', s.knocks, 'text-yellow-400'),
-                    stat('Assists', s.assists),
-                    stat('Damage', s.damage),
-                    stat('Headshots', s.headshots),
-                    stat('Longest', `${s.longest}m`),
-                    stat('Revives', s.revives),
-                    stat('Survived', fmtClock(s.survived)),
-                    stat('Distance', `${(s.dist / 1000).toFixed(1)}km`),
+                    stat('Kills', num(s.kills), 'text-orange-500'),
+                    stat('Knocks', num(s.knocks), 'text-yellow-400'),
+                    stat('Assists', num(s.assists)),
+                    stat('Damage', num(s.damage)),
+                    stat('Headshots', num(s.headshots)),
+                    stat('Longest', `${num(s.longest)}m`),
+                    stat('Revives', num(s.revives)),
+                    stat('Survived', fmtClock(num(s.survived))),
+                    stat('Distance', `${(num(s.dist) / 1000).toFixed(1)}km`),
                 ].join('');
                 this.autoFocus(); this.render();
             }
@@ -312,9 +314,9 @@
                 const hs = e.headshot ? ' <span class="hs">HS</span>' : '';
                 const tk = e.teamKill ? ' <span class="hs">TEAM</span>' : '';
                 let sub = '';
-                if (e.type === 'DEATH') sub = e.unknown ? 'Kill event missing in telemetry' : `${esc(e.weapon)}${e.dist ? ` · ${e.dist}m` : ''}`;
+                if (e.type === 'DEATH') sub = e.unknown ? 'Kill event missing in telemetry' : `${esc(e.weapon)}${e.dist ? ` · ${num(e.dist)}m` : ''}`;
                 else if (e.type === 'REVIVE' || e.type === 'REVIVED') sub = '';
-                else sub = `${esc(e.weapon)}${e.dist ? ` · ${e.dist}m` : ''}`;
+                else sub = `${esc(e.weapon)}${e.dist ? ` · ${num(e.dist)}m` : ''}`;
                 return `<div data-ev="${i}" class="ev ev-${e.type}">
                     <span class="ev-time">${fmtClock(e.t)}</span>
                     ${e.unknown ? '<b>Eliminated</b>' : `<b>${EVENT_LABELS[e.type]}:</b> ${esc(e.suicide ? 'Suicide' : e.name)}`}${hs}${tk}
@@ -403,7 +405,7 @@
                     <div class="tooltip-body">
                         ${row(isOwn ? 'Target' : 'By', esc(found.suicide ? 'Suicide' : found.name))}
                         ${found.weapon ? row('Weapon', esc(found.weapon) + (found.headshot ? ' <span class="hs">HS</span>' : '')) : ''}
-                        ${found.dist ? row('Distance', `${found.dist}m`) : ''}
+                        ${found.dist ? row('Distance', `${num(found.dist)}m`) : ''}
                     </div>`;
                 tip.style.display = 'block';
                 const vw = this.viewport.clientWidth, vh = this.viewport.clientHeight;

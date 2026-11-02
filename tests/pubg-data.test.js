@@ -68,3 +68,13 @@ test('demo matches: telemetry agrees with the match stats', () => {
         }
     }
 });
+
+test('browser source only downloads telemetry from the official CDN or the demo', async () => {
+    assert.ok(D.TELEMETRY_URL.test('https://telemetry-cdn.pubg.com/bluehole-pubg/steam/2026/x.json'));
+    assert.ok(D.TELEMETRY_URL.test('demo/telemetry-1.json'));
+    for (const bad of ['https://telemetry-cdn.pubg.com.evil.com/x', 'http://telemetry-cdn.pubg.com/x', 'javascript:alert(1)', '//evil.com/x', 'demo/../app.py']) {
+        assert.ok(!D.TELEMETRY_URL.test(bad), bad);
+    }
+    const src = new D.BrowserSource({ matches: [], demo: false });
+    await assert.rejects(src.telemetry({ telemetry: 'https://evil.example/x.json' }), /not allowed/);
+});
