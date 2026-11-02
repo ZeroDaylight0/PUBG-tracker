@@ -1,5 +1,8 @@
+import ipaddress
 import json
+import logging
 import os
+import re
 import threading
 import time
 import http.server
@@ -18,6 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent
 MAPS_DIR = BASE_DIR / "maps"
 DATA_DIR = BASE_DIR / "data"
 
+log = logging.getLogger("pubg-tracker")
+
 
 def load_local_env() -> None:
     env_path = BASE_DIR / ".env"
@@ -31,10 +36,20 @@ def load_local_env() -> None:
 
 load_local_env()
 API_KEY = os.environ.get("PUBG_API_KEY", "").strip()
-PORT = int(os.environ.get("PORT", "8000"))
+PORT = int(os.environ.get("PORT", "8000") or 8000)
+HOST = os.environ.get("PUBG_TRACKER_HOST", "127.0.0.1")
 
 PLATFORMS = {"steam", "kakao", "psn", "xbox", "stadia", "console"}
 MAX_MATCHES = 20
+MAX_BODY_BYTES = 16 * 1024
+MAX_TELEMETRY_BYTES = 400 * 1024 * 1024
+MAX_RETRY_WAIT = 60
+
+# PUBG nicknames are letters, digits, "-" and "_"; a comma would query several players at once
+NICKNAME_RE = re.compile(r"^[\w.-]{2,64}$")
+ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")  # match ids (UUIDs) and account ids (account.<hex>, ai.<n>)
+MODE_RE = re.compile(r"^[a-z0-9-]{1,40}$")
+
 
 MAP_NAMES = {
     "Baltic_Main": "Erangel", "Erangel_Main": "Erangel", "Desert_Main": "Miramar",
@@ -55,11 +70,15 @@ MAP_URLS = {
     "high": "https://media.githubusercontent.com/media/pubg/api-assets/master/Assets/Maps/{name}_High_Res.png",
 }
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
-TELEMETRY_HOSTS = (".pubg.com",)
+# Only the official telemetry CDN may be downloaded (no other *.pubg.com host, no redirects)
+TELEMETRY_HOSTS = frozenset({"telemetry-cdn.pubg.com"})
 
 MATCH_STORAGE = []
 STORAGE_LOCK = threading.Lock()
 SESSION = requests.Session()
+
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+ALLOWED_HOSTS = set(LOCAL_HOSTS)
 
 
 class PubgApiError(Exception):
@@ -90,12 +109,48 @@ MAP_LOCKS = {}
 MAP_LOCKS_GUARD = threading.Lock()
 
 
-def api_get(url, params=None):
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def _retry_after(res):
+    """Seconds to wait after a 429: Retry-After, else X-RateLimit-Reset (epoch seconds)."""
+    try:
+        wait = float(res.headers.get("Retry-After", "") or 0)
+    except ValueError:
+        wait = 0
+    if not wait:
+        try:
+            wait = float(res.headers.get("X-RateLimit-Reset", "") or 0) - time.time()
+        except ValueError:
+            wait = 0
+    return min(MAX_RETRY_WAIT, max(1.0, wait or 5.0))
+
+
+def api_get(url, params=None, attempts=4):
+    """GET from the PUBG API with retries for 429 (rate limit), 5xx and network errors.
+
+    The key only goes into the Authorization header; it is never logged or put
+    into an error message.
+    """
     headers = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/vnd.api+json"}
-    for attempt in range(3):
-        res = SESSION.get(url, headers=headers, params=params, timeout=30)
-        if res.status_code == 429 and attempt < 2:
-            time.sleep(int(res.headers.get("Retry-After", "0") or 0) or 5)
+    res = None
+    for attempt in range(attempts):
+        last = attempt == attempts - 1
+        try:
+            res = SESSION.get(url, headers=headers, params=params, timeout=30)
+        except requests.RequestException as e:
+            if last:
+                raise PubgApiError(f"Could not reach the PUBG API ({e.__class__.__name__})") from None
+            _sleep(2 ** attempt)
+            continue
+        if res.status_code == 429 and not last:
+            wait = _retry_after(res)
+            log.info("PUBG API rate limit, retrying in %.0fs", wait)
+            _sleep(wait)
+            continue
+        if res.status_code >= 500 and not last:
+            _sleep(2 ** attempt)
             continue
         break
     if res.status_code == 401:
@@ -174,6 +229,16 @@ def summarize_match(match, player_id, searched_name):
     }
 
 
+def validate_search(nickname, platform):
+    if not nickname:
+        return "Enter a player nickname"
+    if not NICKNAME_RE.match(nickname):
+        return "Invalid nickname (letters, digits, '-', '_' and '.' only)"
+    if platform not in PLATFORMS:
+        return "Unknown platform"
+    return None
+
+
 def load_matches(nickname, platform, count):
     base = f"https://api.pubg.com/shards/{platform}"
     r = api_get(f"{base}/players", params={"filter[playerNames]": nickname})
@@ -182,7 +247,7 @@ def load_matches(nickname, platform, count):
     player = r["data"][0]
     pid = player["id"]
     name = player["attributes"].get("name", nickname)
-    mids = [m["id"] for m in player["relationships"]["matches"]["data"][:count]]
+    mids = [m["id"] for m in player["relationships"]["matches"]["data"][:count] if ID_RE.match(str(m.get("id", "")))]
     if not mids:
         raise PubgApiError("No matches in the last 14 days")
 
@@ -202,16 +267,38 @@ def _safe(fn, arg):
     try:
         return fn(arg)
     except Exception as e:  # one broken match must not break the whole list
-        print(f"Skipping match {arg}: {e}")
+        log.warning("Skipping match %s: %s", arg, e.__class__.__name__ if not isinstance(e, PubgApiError) else e)
         return None
 
 
 def is_allowed_telemetry_url(url):
     try:
         p = urlparse(url)
-    except ValueError:
+        port = p.port
+    except (ValueError, TypeError):
         return False
-    return p.scheme == "https" and bool(p.hostname) and p.hostname.endswith(TELEMETRY_HOSTS)
+    return (p.scheme == "https" and p.hostname in TELEMETRY_HOSTS and port in (None, 443)
+            and not p.username and not p.password)
+
+
+def download_telemetry(url):
+    if not is_allowed_telemetry_url(url):
+        raise PubgApiError("Telemetry URL is not on the official PUBG telemetry CDN")
+    res = SESSION.get(url, timeout=(15, 300), stream=True, allow_redirects=False)
+    try:
+        if not res.ok or res.is_redirect:
+            raise PubgApiError(f"Telemetry download failed ({res.status_code})")
+        buf = bytearray()
+        for chunk in res.iter_content(1 << 20):
+            buf += chunk
+            if len(buf) > MAX_TELEMETRY_BYTES:
+                raise PubgApiError("Telemetry file is too large")
+    finally:
+        res.close()
+    events = json.loads(bytes(buf))
+    if not isinstance(events, list):
+        raise PubgApiError("Unexpected telemetry format")
+    return events
 
 
 def get_map_image(map_id, quality):
@@ -275,8 +362,41 @@ def static_json_path(url_path):
     return path if path.is_file() else None
 
 
+def _host_only(value):
+    """'example.com:8000' / '[::1]:8000' -> host name in lower case."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value[1:value.find("]")] if "]" in value else ""
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+def is_allowed_host(host_header):
+    if "*" in ALLOWED_HOSTS:
+        return True
+    return _host_only(host_header) in ALLOWED_HOSTS
+
+
 class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "PUBGTracker"
+    sys_version = ""
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        super().end_headers()
+
+    def _check_host(self):
+        # Blocks DNS rebinding: another website resolving its name to 127.0.0.1
+        if not is_allowed_host(self.headers.get("Host")):
+            self.send_error(403, "Host not allowed")
+            return False
+        return True
+
     def do_GET(self):
+        if not self._check_host():
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         try:
@@ -306,11 +426,11 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
                     return
                 content = TELEMETRY_CACHE.get(url)
                 if content is None:
-                    res = SESSION.get(url, timeout=120)
-                    if not res.ok:
-                        self.send_error(502, f"Telemetry download failed ({res.status_code})")
+                    try:
+                        content = json.dumps(download_telemetry(url)).encode()
+                    except PubgApiError as e:
+                        self.send_error(502, str(e))
                         return
-                    content = res.content
                     TELEMETRY_CACHE.put(url, content)
                 self._send_raw(content, "application/json")
             elif parsed.path == "/fetch_image":
@@ -339,20 +459,43 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
             pass
         except requests.RequestException as e:
             self.send_error(502, f"Upstream error: {e.__class__.__name__}")
+        except Exception:
+            log.exception("Request failed: %s", parsed.path)
+            self.send_error(500, "Internal error")
 
     def do_POST(self):
+        if not self._check_host():
+            return
         if self.path != "/start_analysis":
             self.send_error(404)
+            return
+        # CSRF: a cross-site page cannot send application/json without a CORS preflight,
+        # and a browser always sends Origin on cross-site POSTs.
+        origin = self.headers.get("Origin")
+        if origin and not is_allowed_host(urlparse(origin).netloc):
+            self._send_json({"success": False, "error": "Cross-origin request blocked"}, status=403)
+            return
+        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+            self._send_json({"success": False, "error": "Expected application/json"}, status=415)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            length = -1
+        if not 0 <= length <= MAX_BODY_BYTES:
+            self._send_json({"success": False, "error": "Invalid request"}, status=400)
+            return
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError
+        except ValueError:
+            self._send_json({"success": False, "error": "Invalid request"}, status=400)
             return
         if not API_KEY:
             self._send_json({"success": False, "error": "PUBG_API_KEY is not configured"})
             return
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length) or b"{}")
-        except ValueError:
-            self._send_json({"success": False, "error": "Invalid request"})
-            return
+
 
         nickname = str(body.get("nickname", "")).strip()
         platform = str(body.get("platform", "steam")).strip().lower()
@@ -360,11 +503,9 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
             count = max(1, min(MAX_MATCHES, int(body.get("count", 5))))
         except (TypeError, ValueError):
             count = 5
-        if not nickname:
-            self._send_json({"success": False, "error": "Enter a player nickname"})
-            return
-        if platform not in PLATFORMS:
-            self._send_json({"success": False, "error": "Unknown platform"})
+        error = validate_search(nickname, platform)
+        if error:
+            self._send_json({"success": False, "error": error})
             return
 
         try:
@@ -375,8 +516,9 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
         except requests.RequestException as e:
             self._send_json({"success": False, "error": f"Network error: {e.__class__.__name__}"})
             return
-        except Exception as e:
-            self._send_json({"success": False, "error": f"Unexpected error: {e}"})
+        except Exception:
+            log.exception("Search failed")
+            self._send_json({"success": False, "error": "Unexpected error, see the server log"})
             return
 
         with STORAGE_LOCK:
@@ -391,11 +533,11 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         self._send_raw(content, ctype)
 
-    def _send_json(self, data):
-        self._send_raw(json.dumps(data).encode(), "application/json")
+    def _send_json(self, data, status=200):
+        self._send_raw(json.dumps(data).encode(), "application/json", status=status)
 
-    def _send_raw(self, content, ctype, cache=False):
-        self.send_response(200)
+    def _send_raw(self, content, ctype, cache=False, status=200):
+        self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
@@ -406,13 +548,29 @@ class PubgProxyHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
+def _is_loopback(host):
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), PubgProxyHandler)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    extra = {h.strip().lower() for h in os.environ.get("PUBG_TRACKER_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    ALLOWED_HOSTS.update(extra)
+    if not _is_loopback(HOST):
+        ALLOWED_HOSTS.add(HOST.lower())
+        log.warning("Listening on %s: the tracker has no login, anyone who can reach this port can use it.", HOST)
+    server = ThreadingHTTPServer((HOST, PORT), PubgProxyHandler)
     print(f"PUBG Tracker is running at http://localhost:{PORT}")
     if not API_KEY:
         print("Warning: PUBG_API_KEY is not set (environment or .env file)")
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    webbrowser.open(f"http://localhost:{PORT}/start")
+    if _is_loopback(HOST):
+        webbrowser.open(f"http://localhost:{PORT}/start")
     try:
         while True:
             time.sleep(1)
