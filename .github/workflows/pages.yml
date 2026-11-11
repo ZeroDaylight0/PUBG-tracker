@@ -37,7 +37,7 @@ jobs:
       - name: Assemble static site
         run: |
           mkdir -p site
-          cp index.html start.html telemetry.js pubg-data.js heatmap.js site/
+          cp index.html start.html telemetry.js pubg-data.js heatmap.js tailwind.css site/
           cp -r data demo site/
           touch site/.nojekyll
       - name: Configure Pages

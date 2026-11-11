@@ -465,6 +465,7 @@ STATIC_FILES = {
     "/telemetry.js": ("telemetry.js", "application/javascript; charset=utf-8"),
     "/pubg-data.js": ("pubg-data.js", "application/javascript; charset=utf-8"),
     "/heatmap.js": ("heatmap.js", "application/javascript; charset=utf-8"),
+    "/tailwind.css": ("tailwind.css", "text/css; charset=utf-8"),
 }
 # Bundled JSON (dictionaries and demo matches) served as-is: /data/<name>.json, /demo/<name>.json
 STATIC_DIRS = ("data", "demo")

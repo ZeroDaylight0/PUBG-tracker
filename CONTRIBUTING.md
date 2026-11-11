@@ -19,6 +19,9 @@ node --test tests/
 
 Please make sure both Python and JavaScript tests pass before opening a pull request.
 
+If you change Tailwind classes, rebuild the stylesheet with `npm ci && npm run build:css`
+and commit `tailwind.css`.
+
 ## Guidelines
 
 - Keep pull requests focused on one change.

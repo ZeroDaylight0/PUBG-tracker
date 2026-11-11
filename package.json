@@ -1,0 +1,14 @@
+{
+  "name": "pubg-tracker",
+  "private": true,
+  "license": "MIT",
+  "description": "Builds tailwind.css for the tactical map; the app itself has no Node dependencies.",
+  "scripts": {
+    "build:css": "tailwindcss -i styles/tailwind.input.css -o tailwind.css --minify",
+    "check:css": "npm run build:css && git diff --exit-code -- tailwind.css"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "tailwindcss": "4.3.5"
+  }
+}

@@ -258,6 +258,10 @@ class ServerTest(unittest.TestCase):
         res, data = self.request("GET", "/heatmap.js")
         self.assertEqual(res.status, 200)
         self.assertIn(b"PubgHeatmap", data)
+        res, data = self.request("GET", "/tailwind.css")
+        self.assertEqual(res.status, 200)
+        self.assertTrue(res.getheader("Content-Type").startswith("text/css"))
+        self.assertIn(b"tailwindcss", data)
         for bad in ("/app.py", "/../app.py", "/data/../app.py", "/storage/pubg-tracker.sqlite3", "/.env"):
             res, _ = self.request("GET", bad)
             self.assertEqual(res.status, 404, bad)

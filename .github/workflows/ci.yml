@@ -41,3 +41,21 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: call start.bat --help
+
+  styles:
+    name: tailwind.css is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - name: Rebuild and compare
+        run: |
+          npm run build:css
+          if ! git diff --exit-code -- tailwind.css; then
+            echo "::error file=tailwind.css::tailwind.css is out of date. Run npm run build:css and commit it."
+            exit 1
+          fi

@@ -1,0 +1,4 @@
+/* Source for tailwind.css. Rebuild with: npm run build:css */
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "../*.js";
