@@ -193,6 +193,7 @@ PUBG-tracker/
 ├── heatmap.py             # Heatmap points from telemetry (server side)
 ├── heatmap.js             # Heatmap points, density grid and colors (browser)
 ├── index.html             # Tactical map interface
+├── tailwind.css           # Built styles, served locally (source: styles/)
 ├── start.html             # Search screen
 ├── telemetry.js           # Telemetry parser (kills, knocks, deaths, zones)
 ├── pubg-data.js           # Data sources: local server, browser (API key), demo
@@ -204,6 +205,7 @@ PUBG-tracker/
 ├── start.sh               # Linux/macOS launcher
 ├── requirements.txt       # Python dependencies
 ├── requirements-dev.txt   # Test dependencies (pytest)
+├── package.json           # Tailwind CLI, only needed to rebuild tailwind.css
 ├── docs/images/          # Project screenshots
 ├── storage/               # Match database, ignored by Git
 ├── maps/                  # Runtime cache, ignored by Git
@@ -220,6 +222,18 @@ node --test tests/
 
 CI (`.github/workflows/ci.yml`) runs both suites on Ubuntu and Windows for
 every pull request.
+
+### Styles
+
+`tailwind.css` is committed, so running the app needs neither Node.js nor a
+CDN. After changing Tailwind classes in `index.html` or the scripts, rebuild it:
+
+```bash
+npm ci
+npm run build:css
+```
+
+CI fails if the committed file is out of date.
 
 ## Architecture
 
@@ -243,6 +257,8 @@ authenticated requests to the PUBG API.
 - The server listens on `127.0.0.1` by default, rejects unknown `Host`
   headers (DNS rebinding) and cross-site POSTs, only downloads telemetry from
   `telemetry-cdn.pubg.com`, and uses parameterized SQL only.
+- Tailwind is built into `tailwind.css` and served locally instead of running
+  a script from a CDN; Font Awesome is pinned with Subresource Integrity.
 - Revoke and replace a key immediately if it was ever exposed.
 
 ## Known limitations
